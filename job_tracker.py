@@ -43,15 +43,23 @@ def display_jobs(jobs):
         print("-"*50)
 
 def update_status(jobs):
+    if not jobs:
+        print("No jobs to update!")
+        return
+    
     display_jobs(jobs)
     updateChoice = input("Pick job to update status by number: ")
+
     try:
         num = int(updateChoice) - 1
+
         if 0 <= num < len(jobs):
             original = jobs[num]['status']
             updateStatus = input("Pick new status: ")
             changed = jobs[num]['status']=updateStatus
             print(f"Job from {jobs[num]['company']} changed from {original} to {changed}")
+        else:
+            print("Invalid number")
     except ValueError:
         print("Please enter a number!")
 
@@ -98,6 +106,18 @@ def main():
             save_jobs(jobs)
         elif choice == "5":
             break
+def add_jobs_from_scraper(scraper_jobs):
+    """Add multiple jobs from scraper"""
+    jobs = load_jobs()
     
+    for job in scraper_jobs:
+        jobs.append({
+            "company": job['company'],
+            "position": job['position'],
+            "status": "Not Applied"
+        })
+    
+    save_jobs(jobs)
+    print(f"\n✓ Added {len(scraper_jobs)} jobs to tracker!")
 if __name__ == "__main__":
     main()
