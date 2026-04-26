@@ -175,13 +175,6 @@ def delete_job(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
 
 
-@app.delete("/api/jobs", status_code=204)
-def clear_all_jobs():
-    with engine.connect() as conn:
-        conn.execute(delete(jobs_table))
-        conn.commit()
-
-
 @app.post("/api/scrape")
 def scrape(search: str = "Software Engineer", location: str = "California"):
     return scrape_linkedin_jobs(search, location)
