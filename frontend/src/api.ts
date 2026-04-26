@@ -25,6 +25,8 @@ export const api = {
       }).then(r => r.json()),
     delete: (id: string): Promise<void> =>
       fetch(`${BASE}/jobs/${id}`, { method: 'DELETE' }).then(() => undefined),
+    clear: (): Promise<void> =>
+      fetch(`${BASE}/jobs`, { method: 'DELETE' }).then(() => undefined),
   },
   stats: (): Promise<Stats> => fetch(`${BASE}/stats`).then(r => r.json()),
   scrape: (search: string, location: string): Promise<Job[]> =>

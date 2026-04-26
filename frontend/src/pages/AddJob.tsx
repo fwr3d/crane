@@ -4,6 +4,29 @@ import type { Status } from '../types'
 
 const STATUSES: Status[] = ['Not Applied', 'Applied', 'Interview', 'Offer', 'Rejected']
 
+const inputStyle = {
+  width: '100%',
+  border: '1px solid #e2e8f0',
+  borderRadius: '8px',
+  padding: '10px 12px',
+  fontSize: '0.875rem',
+  outline: 'none',
+  color: '#0f172a',
+  background: 'white',
+  transition: 'border-color 0.15s',
+  boxSizing: 'border-box' as const,
+}
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '0.68rem',
+  fontWeight: 500,
+  color: '#94a3b8',
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase' as const,
+  marginBottom: '6px',
+}
+
 export function AddJob() {
   const [company, setCompany] = useState('')
   const [position, setPosition] = useState('')
@@ -25,45 +48,55 @@ export function AddJob() {
   }
 
   return (
-    <div className="space-y-6 max-w-lg">
-      <h1 className="text-xl font-semibold text-slate-900">Add Job</h1>
+    <div style={{ maxWidth: '480px' }}>
+      <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', margin: '0 0 1.75rem 0' }}>Add Job</h1>
 
-      <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+      <form onSubmit={submit} className="bg-white rounded-2xl p-6 space-y-5" style={{ border: '1px solid #e2e8f0' }}>
         <div>
-          <label className="block text-xs font-medium text-slate-500 uppercase tracking-widest mb-1.5">Company</label>
+          <label style={labelStyle}>Company</label>
           <input
-            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-slate-400 transition-colors"
+            style={inputStyle}
             placeholder="e.g. Stripe"
             value={company}
             onChange={e => setCompany(e.target.value)}
+            onFocus={e => (e.target.style.borderColor = '#94a3b8')}
+            onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
             required
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-slate-500 uppercase tracking-widest mb-1.5">Position</label>
+          <label style={labelStyle}>Position</label>
           <input
-            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-slate-400 transition-colors"
+            style={inputStyle}
             placeholder="e.g. Software Engineer"
             value={position}
             onChange={e => setPosition(e.target.value)}
+            onFocus={e => (e.target.style.borderColor = '#94a3b8')}
+            onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
             required
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-slate-500 uppercase tracking-widest mb-1.5">Status</label>
+          <label style={labelStyle}>Status</label>
           <div className="flex flex-wrap gap-2">
             {STATUSES.map(s => (
               <button
                 key={s}
                 type="button"
                 onClick={() => setStatus(s)}
-                className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
-                  status === s
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
-                }`}
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  padding: '5px 14px',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  border: status === s ? '1px solid #0f172a' : '1px solid #e2e8f0',
+                  background: status === s ? '#0f172a' : 'white',
+                  color: status === s ? 'white' : '#94a3b8',
+                  transition: 'all 0.15s',
+                }}
               >
                 {s}
               </button>
@@ -74,13 +107,25 @@ export function AddJob() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-slate-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-50 mt-2"
+          className="w-full rounded-lg transition-colors"
+          style={{
+            padding: '10px',
+            background: loading ? '#64748b' : '#0f172a',
+            color: 'white',
+            fontSize: '0.85rem',
+            fontWeight: 500,
+            border: 'none',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            marginTop: '4px',
+          }}
         >
           {loading ? 'Adding...' : 'Add Job'}
         </button>
 
         {saved && (
-          <p className="text-xs text-emerald-600 text-center font-medium">Job added.</p>
+          <p style={{ fontSize: '0.78rem', color: '#10b981', textAlign: 'center', fontWeight: 500 }}>
+            Job added.
+          </p>
         )}
       </form>
     </div>

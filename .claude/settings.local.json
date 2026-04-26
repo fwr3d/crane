@@ -5,7 +5,14 @@
       "Bash(npm install *)",
       "Bash(python -c \"import fastapi, uvicorn\")",
       "Bash(pip install *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(python -m uvicorn main:app --reload --port 8000)",
+      "Bash(npm run *)",
+      "Bash(curl *)",
+      "Bash(Invoke-WebRequest -Uri http://localhost:8000/api/stats -UseBasicParsing)",
+      "Bash(Select-Object -ExpandProperty Content)",
+      "PowerShell(Invoke-WebRequest -Uri http://localhost:8000/api/stats -UseBasicParsing | Select-Object -ExpandProperty Content)",
+      "PowerShell(Get-NetTCPConnection *)"
     ]
   }
 }

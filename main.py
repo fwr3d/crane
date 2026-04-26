@@ -128,6 +128,13 @@ def stats():
     }
 
 
+@app.delete("/api/jobs", status_code=204)
+def clear_jobs():
+    with engine.connect() as conn:
+        conn.execute(delete(jobs_table))
+        conn.commit()
+
+
 @app.post("/api/jobs", status_code=201)
 def add_job(body: JobCreate):
     now = datetime.now().strftime("%Y-%m-%d")

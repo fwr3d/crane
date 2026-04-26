@@ -48,7 +48,7 @@ export function Scrape() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Scrape LinkedIn</h1>
+      <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', margin: 0 }}>Scrape LinkedIn</h1>
 
       <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 max-w-lg">
         <div className="flex gap-3">
