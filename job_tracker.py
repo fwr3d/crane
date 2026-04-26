@@ -107,17 +107,34 @@ def main():
         elif choice == "5":
             break
 def add_jobs_from_scraper(scraper_jobs):
-    """Add multiple jobs from scraper"""
+    """Add multiple jobs from scraper, skip duplicates"""
     jobs = load_jobs()
     
+    added = 0
+    skipped = 0
+    
     for job in scraper_jobs:
-        jobs.append({
-            "company": job['company'],
-            "position": job['position'],
-            "status": "Not Applied"
-        })
+        # Check if job already exists
+        is_duplicate = False
+        for existing in jobs:
+            if (existing['company'].lower() == job['company'].lower() and 
+                existing['position'].lower() == job['position'].lower()):
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            jobs.append({
+                "company": job['company'],
+                "position": job['position'],
+                "status": "Not Applied"
+            })
+            added += 1
+        else:
+            skipped += 1
     
     save_jobs(jobs)
-    print(f"\n✓ Added {len(scraper_jobs)} jobs to tracker!")
+    print(f"\n✓ Added {added} new jobs")
+    if skipped > 0:
+        print(f"⊗ Skipped {skipped} duplicates")
 if __name__ == "__main__":
     main()
