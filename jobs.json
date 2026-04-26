@@ -2,301 +2,361 @@
   {
     "company": "Google",
     "position": "SWE",
-    "status": "fired"
+    "status": "fired",
+    "id": "65a9cde5-a343-40ae-926c-83a643b00b73"
   },
   {
     "company": "Google",
     "position": "SWE",
-    "status": "Hired"
+    "status": "Hired",
+    "id": "fe0b7e02-88b8-4301-a9ff-ebd0b129891a"
   },
   {
     "company": "meta",
     "position": "engineer",
-    "status": "applied"
+    "status": "applied",
+    "id": "9c014dea-1c71-48d2-8706-12ee4f38b1af"
   },
   {
     "company": "Federal Bureau of Investigation (FBI)",
     "position": "Special Agent: STEM-Engineering Background",
-    "status": "Not Applied"
+    "status": "Interview",
+    "id": "516ba470-28f3-48f7-a00b-5dad12d23623"
   },
   {
     "company": "Phillips Tank & Structure",
     "position": "Entry Level Engineer - Designer I",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "e1762fa8-38f9-4e91-a304-fef4545e521e"
   },
   {
     "company": "ELCCO Inc.",
     "position": "Project Engineer I",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "56bd7c7f-664d-40a3-b431-602477bd789d"
   },
   {
     "company": "The Adecco Group",
     "position": "Project Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "faac7dcf-2caa-4891-ae65-db97819ebfaa"
   },
   {
     "company": "Kiewit",
     "position": "Kiewit Building Group - Field/Office Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "e8b95ee7-eab0-4702-92d8-4747056e1062"
   },
   {
     "company": "Seneca Resources Company, LLC",
     "position": "Distribution Engineering Supervisor - Honolulu, Hawaii",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "19df539e-dff1-48ac-bed8-7c3f5b16255b"
   },
   {
     "company": "Arena Family of Companies",
     "position": "Project Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "cd6817b9-ee8e-41e9-be64-9cc6f7d66cf4"
   },
   {
     "company": "Ford & Associates, Inc.",
     "position": "Geologist, Engineer, or Environmental Scientist",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "086eb9a0-cba3-40cf-a9d6-bd1a073eb835"
   },
   {
     "company": "Cymertek Corporation",
     "position": "AI/ML Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "a349f9c0-e08a-45fd-9473-684376dc0f99"
   },
   {
     "company": "Mass. Electric Construction Co.",
     "position": "Field Engineer - Electrical Construction",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "f1d839af-b550-4d51-843c-5ac1f2bdbf10"
   },
   {
     "company": "Mass. Electric Construction Co.",
     "position": "Field Engineer - Electrical Construction",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "13308947-3796-457e-a602-5e8f2eee38a0"
   },
   {
     "company": "Bluehawk LLC, Intelligence Services",
     "position": "Data Engineer - Jr.",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "686af7c0-ea79-46a0-ac3d-d098158361b7"
   },
   {
     "company": "Mass. Electric Construction Co.",
     "position": "Project Engineer 3",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "0e4aad12-3585-4f1f-a47c-ac7df957fc7b"
   },
   {
     "company": "The Walt Disney Company",
     "position": "Engineer 1- Full Time, $42.15/Hour",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "483be3a0-0305-46b7-b940-2f275a1001b6"
   },
   {
     "company": "Mass. Electric Construction Co.",
     "position": "Field/Office Engineer - MEC Industrial",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "bddde5ad-9532-4602-8164-bae7b7197eb1"
   },
   {
     "company": "Mass. Electric Construction Co.",
     "position": "Project Engineer 3",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "7a4764e0-fa2b-49f0-9762-b1458a5537c2"
   },
   {
     "company": "City and County of Honolulu",
     "position": "MECHANICAL ENGINEER III (EN-22) [2 vacancies]",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "f8f0c18b-ecce-4137-84dd-73f50bddf5ca"
   },
   {
     "company": "DataAnnotation",
     "position": "Chemical Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "f1585594-c87d-423f-9e30-5bcbb9a50949"
   },
   {
     "company": "Hawaiian Electric",
     "position": "Engineer I / Engineer, Operations - Maui",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "8fcbc3b6-eafa-45df-989b-1c79b6320467"
   },
   {
     "company": "Lodging Dynamics",
     "position": "Engineer/ Maintenance PART TIME",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "3cb412eb-b58b-4c98-947c-2640a1b83130"
   },
   {
     "company": "DataAnnotation",
     "position": "Aerospace Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "cba49792-e9c0-4b73-9e54-736fc3bd925f"
   },
   {
     "company": "U.S. Pacific Fleet",
     "position": "ELECTRICAL ENGINEER.",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "fc0430db-0afb-48e4-8726-a8e3b06c1b01"
   },
   {
     "company": "Pacific Air Forces",
     "position": "Developmental Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "e47c82d6-5d7a-4c0f-b30b-f289fce5c131"
   },
   {
     "company": "Cymertek Corporation",
     "position": "Full Stack Developer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "e099d933-54f9-4716-86b0-32a39c8a69d9"
   },
   {
     "company": "Cymertek Corporation",
     "position": "Machine Learning Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "af16ccb1-ed1b-48d6-b585-40bdfbd3b9f9"
   },
   {
     "company": "NextGen | GTA: A Kelly Telecom Company",
     "position": "Telecom Installation Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "0b659253-32e1-47e5-bf08-668bfa956028"
   },
   {
     "company": "U.S. Pacific Fleet",
     "position": "NUCLEAR ENGINEER.",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "3e51dd44-f6ea-4faa-8c14-a4af8b8606cd"
   },
   {
     "company": "Cymertek Corporation",
     "position": "Data Scientist",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "fd4c47bd-e537-4191-9db0-5c674f830b2f"
   },
   {
     "company": "City and County of Honolulu",
     "position": "ELECTRICAL ENGINEER III (EN-22) [1 vacancy]",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "0070f28f-3e18-4308-ad7e-e3f28c857621"
   },
   {
     "company": "U.S. Pacific Fleet",
     "position": "INTERDISCIPLINARY ENGINEER / NAVAL ARCHITECT.",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "670a311f-0616-429a-bc45-36d6e3fc4e36"
   },
   {
     "company": "City and County of Honolulu",
     "position": "CIVIL ENGINEER VI (EN-28) [2 vacancies]",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "64eab889-a9bd-4041-8ef3-a68795f7a18c"
   },
   {
     "company": "FlatironDragados",
     "position": "Project Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "50087a0c-d50a-443e-822a-27a8a6f4a0fc"
   },
   {
     "company": "U.S. Pacific Fleet",
     "position": "NUCLEAR ENGINEER.",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "1083d562-5b55-4ff5-9f8a-e3238eb19596"
   },
   {
     "company": "Xantium Group - Tudor Investment Corporation",
     "position": "Technical Operations Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "49a97141-e4f3-49a9-84e5-3211762eed88"
   },
   {
     "company": "Sun Construction, Inc.",
     "position": "Project Engineer I",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "5b1e8402-3956-40c2-b3c9-2ceb4f2d558c"
   },
   {
     "company": "Grace Pacific LLC",
     "position": "Construction Engineer I - Kona/Hilo",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "6af2b50c-d012-4725-97b3-6196874aa038"
   },
   {
     "company": "Olgoonik Corporation",
     "position": "Project Engineer-AE",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "feb21293-9eb0-41b0-8c4b-82173a15ff66"
   },
   {
     "company": "Aqua Engineers, Inc.",
     "position": "Engineering Services Manager",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "0198c0ae-dd72-46f8-84f1-df5b80d4e8a4"
   },
   {
     "company": "Ambient",
     "position": "Inside Sales Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "ec8ff3ef-704f-4218-a171-6ab43d8f10bc"
   },
   {
     "company": "City and County of Honolulu",
     "position": "ELECTRICAL ENGINEER IV (EN-24) [1 vacancy]",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "f1c8c990-1642-4f2e-8d6a-93506ba52ed6"
   },
   {
     "company": "FlatironDragados",
     "position": "Project Engineer-MEP",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "33257c49-d4b9-4773-8dc9-f15ad25e390f"
   },
   {
     "company": "Cymertek Corporation",
     "position": "QA Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "2399eae4-8018-46b2-8ab9-495a698b76a4"
   },
   {
     "company": "Kiewit",
     "position": "Field Engineer 1 - Northwest (Heavy Civil)",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "6deee897-00b9-4ec1-b6db-b56375e6196b"
   },
   {
     "company": "Cymertek Corporation",
     "position": "RF Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "f76833b4-7c80-493f-abcf-8962a996d6b8"
   },
   {
     "company": "City and County of Honolulu",
     "position": "CIVIL ENGINEER I (EN-18) [2 vacancies]",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "c1d72ccb-efc9-41cf-b9bb-0655814cacd8"
   },
   {
     "company": "CGS Federal (Contact Government Services)",
     "position": "FSR Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "5fe17b4a-a601-43a9-b125-1c5f592425f0"
   },
   {
     "company": "DataAnnotation",
     "position": "Satellite Systems Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "966d65ea-8cd8-497b-a5e8-357d6e2280e9"
   },
   {
     "company": "Technoyon India Pvt. Ltd.",
     "position": "Voice Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "6cab4b34-8fe5-443c-abed-6d1cd23152cc"
   },
   {
     "company": "Goodfellow Bros.",
     "position": "Project Engineer Entry Level (Koloa, HI) Kauai",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "67420728-f897-41ef-81d3-59e8387aa036"
   },
   {
     "company": "Cymertek Corporation",
     "position": "Data Scientist",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "f7ddb2a1-0414-4444-8d06-aceee485dd8c"
   },
   {
     "company": "Afognak Native Corporation",
     "position": "Mechanical Engineer II",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "5c43a3fb-ad4d-429b-b03e-1bb17fec133c"
   },
   {
     "company": "Cymertek Corporation",
     "position": "C / C++ / Java Software Developer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "c19dd750-0e0b-45e5-9245-2180c83dd92f"
   },
   {
     "company": "Cymertek Corporation",
     "position": "Test Engineer (Automated Testing)",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "2a7fdf82-53f1-4623-9ccb-60dc69f81484"
   },
   {
     "company": "Coffman Engineers",
     "position": "Civil Engineer \u2013 Water Resources (0-5 years)",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "80072a3a-984f-47ac-b197-3e9c55832a74"
   },
   {
     "company": "Unknown",
     "position": "Maintenance Engineer",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "722a2c85-f058-4451-aae1-9ba94104cfbe"
   },
   {
     "company": "Coffman Engineers",
     "position": "Civil Engineer (0-5 years)",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "3afb6307-79fe-41f7-a859-7b9e6d6fc927"
   },
   {
     "company": "Hualalai Resort",
     "position": "Engineering - Shift Engineer - Full Time",
-    "status": "Not Applied"
+    "status": "Not Applied",
+    "id": "3ca96a97-363f-4e6c-ba64-06f1a4b15bc0"
   }
 ]
