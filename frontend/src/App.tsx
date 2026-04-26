@@ -21,7 +21,7 @@ export default function App() {
     <div className="min-h-screen flex bg-slate-50" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
       {/* Sidebar */}
       <aside className="w-52 shrink-0 bg-slate-900 flex flex-col py-8 px-4 min-h-screen">
-        <p className="text-white text-sm font-semibold px-2 mb-8 tracking-tight">Job Tracker</p>
+        <p className="text-white text-sm font-semibold px-2 mb-8 tracking-tight">Crane</p>
         <nav className="flex flex-col gap-0.5">
           {NAV.map(n => (
             <button

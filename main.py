@@ -1,16 +1,14 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from typing import Optional
-import uuid
-import csv
-import io
+from sqlalchemy import select, insert, update, delete
+import uuid, csv, io, json, os
 from datetime import datetime
 
-from job_tracker import load_jobs, save_jobs
+from database import engine, jobs_table, init_db
 from scraper import scrape_linkedin_jobs
-
-app = FastAPI()
 
 STATUSES = ["Not Applied", "Applied", "Interview", "Offer", "Rejected"]
 
@@ -22,23 +20,57 @@ def normalize_status(s: str) -> str:
     return s
 
 
-def ensure_ids(jobs: list[dict]) -> list[dict]:
-    changed = False
-    for job in jobs:
-        if not job.get("id"):
-            job["id"] = str(uuid.uuid4())
-            changed = True
-    if changed:
-        save_jobs(jobs)
-    return jobs
+def row_to_dict(row) -> dict:
+    return dict(row._mapping)
+
+
+def migrate_json():
+    """One-time migration from jobs.json into the database."""
+    if not os.path.exists("jobs.json"):
+        return
+    with engine.connect() as conn:
+        existing = conn.execute(select(jobs_table)).fetchall()
+        if existing:
+            return
+        with open("jobs.json") as f:
+            jobs = json.load(f)
+        for job in jobs:
+            conn.execute(insert(jobs_table).values(
+                id=str(uuid.uuid4()),
+                company=job.get("company", ""),
+                position=job.get("position", ""),
+                status=normalize_status(job.get("status", "Not Applied")),
+                date_added=job.get("date_added"),
+                date_applied=job.get("date_applied"),
+            ))
+        conn.commit()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    migrate_json()
+    yield
+
+
+# ── App ────────────────────────────────────────────────────────────────────────
+
+app = FastAPI(title="Crane", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 
 class JobCreate(BaseModel):
-    company: str
+    company:  str
     position: str
-    status: str = "Not Applied"
+    status:   str = "Not Applied"
 
 class JobUpdate(BaseModel):
     status: str
@@ -48,30 +80,36 @@ class JobUpdate(BaseModel):
 
 @app.get("/api/jobs")
 def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
-    jobs = ensure_ids(load_jobs())
+    with engine.connect() as conn:
+        rows = conn.execute(select(jobs_table)).fetchall()
+
+    jobs = [row_to_dict(r) for r in rows]
 
     if search:
         q = search.lower()
         jobs = [j for j in jobs if q in j["company"].lower() or q in j["position"].lower()]
 
     if status:
-        statuses = status.split(",")
+        statuses = set(status.split(","))
         jobs = [j for j in jobs if normalize_status(j["status"]) in statuses]
 
     if sort == "company":
-        jobs = sorted(jobs, key=lambda j: j["company"].lower())
+        jobs.sort(key=lambda j: j["company"].lower())
     elif sort == "status":
         order = {s: i for i, s in enumerate(STATUSES)}
-        jobs = sorted(jobs, key=lambda j: order.get(normalize_status(j["status"]), 99))
+        jobs.sort(key=lambda j: order.get(normalize_status(j["status"]), 99))
     else:
-        jobs = sorted(jobs, key=lambda j: j.get("date_added", ""), reverse=True)
+        jobs.sort(key=lambda j: j.get("date_added") or "", reverse=True)
 
     return jobs
 
 
 @app.get("/api/stats")
 def stats():
-    jobs = ensure_ids(load_jobs())
+    with engine.connect() as conn:
+        rows = conn.execute(select(jobs_table)).fetchall()
+
+    jobs = [row_to_dict(r) for r in rows]
     counts = {s: 0 for s in STATUSES}
     for job in jobs:
         ns = normalize_status(job["status"])
@@ -80,64 +118,74 @@ def stats():
 
     total = len(jobs)
     responded = counts["Applied"] + counts["Interview"] + counts["Offer"] + counts["Rejected"]
-    active = counts["Applied"] + counts["Interview"] + counts["Offer"]
+    active    = counts["Applied"] + counts["Interview"] + counts["Offer"]
 
     return {
-        "total": total,
-        "by_status": counts,
+        "total":         total,
+        "by_status":     counts,
         "response_rate": round(responded / total * 100) if total else 0,
-        "offer_rate": round(counts["Offer"] / active * 100) if active else 0,
+        "offer_rate":    round(counts["Offer"] / active * 100) if active else 0,
     }
 
 
 @app.post("/api/jobs", status_code=201)
 def add_job(body: JobCreate):
-    jobs = ensure_ids(load_jobs())
     now = datetime.now().strftime("%Y-%m-%d")
-    new_job = {
-        "id": str(uuid.uuid4()),
-        "company": body.company.strip(),
-        "position": body.position.strip(),
-        "status": body.status,
-        "date_added": now,
+    job = {
+        "id":           str(uuid.uuid4()),
+        "company":      body.company.strip(),
+        "position":     body.position.strip(),
+        "status":       body.status,
+        "date_added":   now,
         "date_applied": now if body.status == "Applied" else None,
     }
-    jobs.append(new_job)
-    save_jobs(jobs)
-    return new_job
+    with engine.connect() as conn:
+        conn.execute(insert(jobs_table).values(**job))
+        conn.commit()
+    return job
 
 
 @app.patch("/api/jobs/{job_id}")
 def update_job(job_id: str, body: JobUpdate):
-    jobs = ensure_ids(load_jobs())
-    for job in jobs:
-        if job["id"] == job_id:
-            job["status"] = body.status
-            if body.status == "Applied" and not job.get("date_applied"):
-                job["date_applied"] = datetime.now().strftime("%Y-%m-%d")
-            save_jobs(jobs)
-            return job
-    raise HTTPException(status_code=404, detail="Job not found")
+    values = {"status": body.status}
+    if body.status == "Applied":
+        with engine.connect() as conn:
+            row = conn.execute(select(jobs_table).where(jobs_table.c.id == job_id)).fetchone()
+        if row and not row_to_dict(row).get("date_applied"):
+            values["date_applied"] = datetime.now().strftime("%Y-%m-%d")
+
+    with engine.connect() as conn:
+        result = conn.execute(
+            update(jobs_table).where(jobs_table.c.id == job_id).values(**values)
+        )
+        conn.commit()
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Job not found")
+        row = conn.execute(select(jobs_table).where(jobs_table.c.id == job_id)).fetchone()
+
+    return row_to_dict(row)
 
 
 @app.delete("/api/jobs/{job_id}", status_code=204)
 def delete_job(job_id: str):
-    jobs = ensure_ids(load_jobs())
-    new_jobs = [j for j in jobs if j["id"] != job_id]
-    if len(new_jobs) == len(jobs):
+    with engine.connect() as conn:
+        result = conn.execute(delete(jobs_table).where(jobs_table.c.id == job_id))
+        conn.commit()
+    if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Job not found")
-    save_jobs(new_jobs)
 
 
 @app.post("/api/scrape")
 def scrape(search: str = "Software Engineer", location: str = "California"):
-    results = scrape_linkedin_jobs(search, location)
-    return results
+    return scrape_linkedin_jobs(search, location)
 
 
 @app.get("/api/export")
 def export_csv():
-    jobs = load_jobs()
+    with engine.connect() as conn:
+        rows = conn.execute(select(jobs_table)).fetchall()
+
+    jobs = [row_to_dict(r) for r in rows]
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
@@ -147,7 +195,7 @@ def export_csv():
     writer.writeheader()
     writer.writerows(jobs)
 
-    filename = f"jobs_{datetime.now().strftime('%Y%m%d')}.csv"
+    filename = f"crane_jobs_{datetime.now().strftime('%Y%m%d')}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",

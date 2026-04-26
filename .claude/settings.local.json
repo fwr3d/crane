@@ -4,7 +4,8 @@
       "Bash(npm create *)",
       "Bash(npm install *)",
       "Bash(python -c \"import fastapi, uvicorn\")",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(git add *)"
     ]
   }
 }
