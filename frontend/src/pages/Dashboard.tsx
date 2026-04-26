@@ -38,16 +38,16 @@ export function Dashboard() {
       {/* Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Total',      value: stats.total },
-          { label: 'Applied',    value: stats.by_status['Applied'] },
-          { label: 'Interviews', value: stats.by_status['Interview'] },
-          { label: 'Offers',     value: stats.by_status['Offer'] },
+          { label: 'Total',        value: stats.total },
+          { label: 'Applied',      value: stats.by_status['Applied'] },
+          { label: 'Interviews',   value: stats.by_status['Interview'] },
+          { label: 'Follow ups',   value: stats.stale, warn: stats.stale > 0 },
         ].map(m => (
-          <div key={m.label} className="bg-white rounded-2xl p-5" style={{ border: '1px solid #e2e8f0' }}>
+          <div key={m.label} className="bg-white rounded-2xl p-5" style={{ border: `1px solid ${(m as any).warn ? '#fde68a' : '#e2e8f0'}`, background: (m as any).warn ? '#fffbeb' : 'white' }}>
             <p style={{ fontSize: '0.68rem', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               {m.label}
             </p>
-            <p className="tabular-nums mt-1.5" style={{ fontFamily: "'Syne', sans-serif", fontSize: '2.4rem', fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>
+            <p className="tabular-nums mt-1.5" style={{ fontFamily: "'Syne', sans-serif", fontSize: '2.4rem', fontWeight: 700, color: (m as any).warn ? '#b45309' : '#0f172a', lineHeight: 1 }}>
               {m.value}
             </p>
           </div>

@@ -7,6 +7,9 @@ export interface Job {
   status: Status
   date_added?: string
   date_applied?: string
+  url?: string
+  notes?: string
+  deadline?: string
 }
 
 export interface Stats {
@@ -14,4 +17,5 @@ export interface Stats {
   by_status: Record<Status, number>
   response_rate: number
   offer_rate: number
+  stale: number
 }

@@ -8,20 +8,26 @@ export const api = {
       const q = new URLSearchParams()
       if (params?.search) q.set('search', params.search)
       if (params?.status) q.set('status', params.status)
-      if (params?.sort) q.set('sort', params.sort)
+      if (params?.sort)   q.set('sort',   params.sort)
       return fetch(`${BASE}/jobs?${q}`).then(r => r.json())
     },
-    create: (body: { company: string; position: string; status: Status }): Promise<Job> =>
+    create: (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
       fetch(`${BASE}/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }).then(r => r.json()),
-    update: (id: string, status: Status): Promise<Job> =>
+    update: (id: string, fields: { status?: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
       fetch(`${BASE}/jobs/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(fields),
+      }).then(r => r.json()),
+    bulkUpdate: (ids: string[], status: Status): Promise<{ updated: number }> =>
+      fetch(`${BASE}/jobs/bulk`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, status }),
       }).then(r => r.json()),
     delete: (id: string): Promise<void> =>
       fetch(`${BASE}/jobs/${id}`, { method: 'DELETE' }).then(() => undefined),

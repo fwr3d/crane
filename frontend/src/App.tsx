@@ -38,7 +38,6 @@ export default function App() {
               className="text-left text-sm py-2 transition-colors"
               style={{
                 paddingLeft: '11px',
-                borderLeft: page === n.id ? '2px solid white' : '2px solid transparent',
                 color: page === n.id ? 'white' : '#64748b',
                 fontWeight: page === n.id ? 500 : 400,
                 background: 'none',

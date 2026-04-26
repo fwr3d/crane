@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
+from typing import Optional
 from sqlalchemy import select, insert, update, delete
 import uuid, csv, io, json, os
 from datetime import datetime
@@ -25,7 +26,6 @@ def row_to_dict(row) -> dict:
 
 
 def migrate_json():
-    """One-time migration from jobs.json into the database."""
     if not os.path.exists("jobs.json"):
         return
     with engine.connect() as conn:
@@ -71,8 +71,18 @@ class JobCreate(BaseModel):
     company:  str
     position: str
     status:   str = "Not Applied"
+    url:      Optional[str] = None
+    notes:    Optional[str] = None
+    deadline: Optional[str] = None
 
 class JobUpdate(BaseModel):
+    status:   Optional[str] = None
+    url:      Optional[str] = None
+    notes:    Optional[str] = None
+    deadline: Optional[str] = None
+
+class BulkUpdate(BaseModel):
+    ids:    list[str]
     status: str
 
 
@@ -98,6 +108,8 @@ def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
     elif sort == "status":
         order = {s: i for i, s in enumerate(STATUSES)}
         jobs.sort(key=lambda j: order.get(normalize_status(j["status"]), 99))
+    elif sort == "deadline":
+        jobs.sort(key=lambda j: j.get("deadline") or "9999-99-99")
     else:
         jobs.sort(key=lambda j: j.get("date_added") or "", reverse=True)
 
@@ -116,15 +128,28 @@ def stats():
         if ns in counts:
             counts[ns] += 1
 
-    total = len(jobs)
+    total     = len(jobs)
     responded = counts["Applied"] + counts["Interview"] + counts["Offer"] + counts["Rejected"]
     active    = counts["Applied"] + counts["Interview"] + counts["Offer"]
+
+    # Follow-up alerts: Applied/Interview with no update in 14+ days
+    today = datetime.now().date()
+    stale = 0
+    for job in jobs:
+        if normalize_status(job["status"]) not in ("Applied", "Interview"):
+            continue
+        ref = job.get("date_applied") or job.get("date_added")
+        if ref:
+            days = (today - datetime.strptime(ref, "%Y-%m-%d").date()).days
+            if days >= 14:
+                stale += 1
 
     return {
         "total":         total,
         "by_status":     counts,
         "response_rate": round(responded / total * 100) if total else 0,
         "offer_rate":    round(counts["Offer"] / active * 100) if active else 0,
+        "stale":         stale,
     }
 
 
@@ -145,6 +170,9 @@ def add_job(body: JobCreate):
         "status":       body.status,
         "date_added":   now,
         "date_applied": now if body.status == "Applied" else None,
+        "url":          body.url,
+        "notes":        body.notes,
+        "deadline":     body.deadline,
     }
     with engine.connect() as conn:
         conn.execute(insert(jobs_table).values(**job))
@@ -152,19 +180,43 @@ def add_job(body: JobCreate):
     return job
 
 
+# Bulk must come before /{job_id} so "bulk" isn't matched as an ID
+@app.patch("/api/jobs/bulk")
+def bulk_update(body: BulkUpdate):
+    now = datetime.now().strftime("%Y-%m-%d")
+    with engine.connect() as conn:
+        for job_id in body.ids:
+            values: dict = {"status": body.status}
+            if body.status == "Applied":
+                row = conn.execute(select(jobs_table).where(jobs_table.c.id == job_id)).fetchone()
+                if row and not row_to_dict(row).get("date_applied"):
+                    values["date_applied"] = now
+            conn.execute(update(jobs_table).where(jobs_table.c.id == job_id).values(**values))
+        conn.commit()
+    return {"updated": len(body.ids)}
+
+
 @app.patch("/api/jobs/{job_id}")
 def update_job(job_id: str, body: JobUpdate):
-    values = {"status": body.status}
-    if body.status == "Applied":
-        with engine.connect() as conn:
-            row = conn.execute(select(jobs_table).where(jobs_table.c.id == job_id)).fetchone()
-        if row and not row_to_dict(row).get("date_applied"):
-            values["date_applied"] = datetime.now().strftime("%Y-%m-%d")
+    values: dict = {}
+
+    if body.status is not None:
+        values["status"] = body.status
+        if body.status == "Applied":
+            with engine.connect() as conn:
+                row = conn.execute(select(jobs_table).where(jobs_table.c.id == job_id)).fetchone()
+            if row and not row_to_dict(row).get("date_applied"):
+                values["date_applied"] = datetime.now().strftime("%Y-%m-%d")
+
+    if body.url      is not None: values["url"]      = body.url
+    if body.notes    is not None: values["notes"]    = body.notes
+    if body.deadline is not None: values["deadline"] = body.deadline
+
+    if not values:
+        raise HTTPException(status_code=400, detail="Nothing to update")
 
     with engine.connect() as conn:
-        result = conn.execute(
-            update(jobs_table).where(jobs_table.c.id == job_id).values(**values)
-        )
+        result = conn.execute(update(jobs_table).where(jobs_table.c.id == job_id).values(**values))
         conn.commit()
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -196,7 +248,7 @@ def export_csv():
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
-        fieldnames=["company", "position", "status", "date_added", "date_applied"],
+        fieldnames=["company", "position", "status", "date_added", "date_applied", "url", "deadline", "notes"],
         extrasaction="ignore",
     )
     writer.writeheader()
