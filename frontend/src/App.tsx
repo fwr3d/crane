@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Dashboard } from './pages/Dashboard'
 import { Jobs } from './pages/Jobs'
-import { AddJob } from './pages/AddJob'
 import { Scrape } from './pages/Scrape'
 import { api } from './api'
 import type { Stats } from './types'
@@ -10,24 +8,20 @@ import { StatusDot } from './components/StatusBadge'
 import { STATUS_LIST } from './components/statusTokens'
 import { useAuth } from './context/auth'
 
-type Page = 'dashboard' | 'jobs' | 'add' | 'scrape'
+type Page = 'jobs' | 'scrape'
 
 const NAV: { id: Page; label: string }[] = [
-  { id: 'dashboard', label: 'Today'   },
-  { id: 'jobs',      label: 'All jobs' },
-  { id: 'add',       label: 'Add job'  },
-  { id: 'scrape',    label: 'Find'     },
+  { id: 'jobs',   label: 'Board' },
+  { id: 'scrape', label: 'Find'  },
 ]
 
 const navIcon: Record<Page, string> = {
-  dashboard: '▦',
-  jobs: '▤',
-  add: '+',
+  jobs:   '▦',
   scrape: '⌕',
 }
 
 export default function App() {
-  const [page,  setPage]  = useState<Page>('dashboard')
+  const [page,  setPage]  = useState<Page>('jobs')
   const [stats, setStats] = useState<Stats | null>(null)
   const { profile, signOut } = useAuth()
   const name = profile?.name?.trim() || 'You'
@@ -90,18 +84,6 @@ export default function App() {
             >
               <span style={{ width: 16, opacity: page === n.id ? 1 : 0.7, textAlign: 'center' }}>{navIcon[n.id]}</span>
               <span style={{ flex: 1 }}>{n.label}</span>
-              {n.id === 'dashboard' && stats && stats.stale > 0 && (
-                <span style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  color: 'white',
-                  background: 'rgba(194, 113, 12, 0.5)',
-                  padding: '1px 7px',
-                  borderRadius: 999,
-                }}>
-                  {stats.stale}
-                </span>
-              )}
               {n.id === 'jobs' && stats && (
                 <span style={{ fontSize: 10.5, fontWeight: 600, color: page === n.id ? 'white' : '#64748b' }}>
                   {stats.total}
@@ -185,10 +167,8 @@ export default function App() {
 
       {/* Main */}
       <main className="flex-1" style={{ minWidth: 0, padding: '36px 48px 60px' }}>
-        {page === 'dashboard' && <Dashboard goJobs={() => setPage('jobs')} />}
-        {page === 'jobs'      && <Jobs />}
-        {page === 'add'       && <AddJob onAdded={() => setPage('jobs')} />}
-        {page === 'scrape'    && <Scrape />}
+        {page === 'jobs'   && <Jobs goScrape={() => setPage('scrape')} />}
+        {page === 'scrape' && <Scrape />}
       </main>
     </div>
   )

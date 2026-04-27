@@ -4,7 +4,7 @@ import { useAuth } from '../context/auth'
 import { supabase } from '../lib/supabase'
 import craneLogo from '../assets/crane.svg'
 
-type Step = 'welcome' | 'account' | 'profile' | 'first-job' | 'done'
+type Step = 'welcome' | 'account' | 'profile' | 'first-job' | 'done' | 'forgot' | 'reset'
 
 const HEADING: React.CSSProperties = { fontFamily: "'Syne', sans-serif" }
 const BODY:    React.CSSProperties = { fontFamily: "'Figtree', system-ui, sans-serif" }
@@ -90,18 +90,46 @@ export function Onboarding() {
   const [company, setCompany] = useState('')
   const [position, setPosition] = useState('')
   const [status, setStatus]   = useState('Not Applied')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError]     = useState('')
   const [busy, setBusy]       = useState(false)
 
   useEffect(() => {
     if (loading) return
-
     if (user && profile?.name && (step === 'welcome' || step === 'account')) {
       navigate('/app', { replace: true })
-      return
     }
-
   }, [loading, user, profile, step, navigate])
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(event => {
+      if (event === 'PASSWORD_RECOVERY') setStep('reset')
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleForgot = async () => {
+    setError('')
+    setBusy(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/onboarding`,
+    })
+    setBusy(false)
+    if (error) { setError(error.message); return }
+    setError('Reset link sent — check your email.')
+  }
+
+  const handleReset = async () => {
+    if (newPassword !== confirmPassword) { setError('Passwords do not match.'); return }
+    if (newPassword.length < 6) { setError('Password must be at least 6 characters.'); return }
+    setError('')
+    setBusy(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setBusy(false)
+    if (error) { setError(error.message); return }
+    navigate('/app', { replace: true })
+  }
 
   const handleAccount = async () => {
     setError('')
@@ -156,6 +184,7 @@ export function Onboarding() {
 
   const currentStep: Step = user && !profile?.name && (step === 'welcome' || step === 'account') ? 'profile' : step
   const dots: Step[] = ['account', 'profile', 'first-job']
+  const showHeader = !['welcome', 'done', 'forgot', 'reset'].includes(currentStep)
   const dotIdx = dots.indexOf(currentStep)
 
   return (
@@ -166,7 +195,7 @@ export function Onboarding() {
     }}>
 
       {/* Header — only during middle steps */}
-      {currentStep !== 'welcome' && currentStep !== 'done' && (
+      {showHeader && (
         <header style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '1.25rem 3rem', borderBottom: '1px solid rgba(255,255,255,0.08)',
@@ -268,6 +297,11 @@ export function Onboarding() {
                 ? <>Already have an account? <span style={{ color: '#64748b' }}>Sign in</span></>
                 : <>No account? <span style={{ color: '#64748b' }}>Create one</span></>}
             </GhostBtn>
+            {mode === 'signin' && (
+              <GhostBtn onClick={() => { setStep('forgot'); setError('') }}>
+                <span style={{ color: '#334155' }}>Forgot password?</span>
+              </GhostBtn>
+            )}
           </div>
         )}
 
@@ -346,6 +380,66 @@ export function Onboarding() {
             {error && (
               <p style={{ fontSize: '0.8rem', color: '#f87171', margin: '10px 0 0' }}>{error}</p>
             )}
+          </div>
+        )}
+
+        {/* ── Forgot password ── */}
+        {currentStep === 'forgot' && (
+          <div style={{ width: '100%', maxWidth: '400px' }}>
+            <h2 style={{ ...HEADING, fontSize: '1.7rem', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 0.5rem' }}>
+              Reset your password
+            </h2>
+            <p style={{ fontSize: '0.85rem', color: '#475569', margin: '0 0 2rem' }}>
+              Enter your email and we'll send a reset link.
+            </p>
+            <input
+              type="email" placeholder="Email address" value={email}
+              onChange={e => setEmail(e.target.value)} style={inputStyle}
+              onFocus={focusIn} onBlur={focusOut} autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleForgot()}
+            />
+            {error && (
+              <p style={{ fontSize: '0.8rem', color: error.startsWith('Reset link') ? '#4ade80' : '#f87171', margin: '10px 0 0' }}>
+                {error}
+              </p>
+            )}
+            <PrimaryBtn onClick={handleForgot} disabled={busy || !email}>
+              {busy ? 'Sending…' : 'Send reset link →'}
+            </PrimaryBtn>
+            <GhostBtn onClick={() => { setStep('account'); setMode('signin'); setError('') }}>
+              <span style={{ color: '#334155' }}>Back to sign in</span>
+            </GhostBtn>
+          </div>
+        )}
+
+        {/* ── Reset password ── */}
+        {currentStep === 'reset' && (
+          <div style={{ width: '100%', maxWidth: '400px' }}>
+            <h2 style={{ ...HEADING, fontSize: '1.7rem', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 0.5rem' }}>
+              Set new password
+            </h2>
+            <p style={{ fontSize: '0.85rem', color: '#475569', margin: '0 0 2rem' }}>
+              Choose a new password for your account.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input
+                type="password" placeholder="New password" value={newPassword}
+                onChange={e => setNewPassword(e.target.value)} style={inputStyle}
+                onFocus={focusIn} onBlur={focusOut} autoFocus
+              />
+              <input
+                type="password" placeholder="Confirm new password" value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)} style={inputStyle}
+                onFocus={focusIn} onBlur={focusOut}
+                onKeyDown={e => e.key === 'Enter' && handleReset()}
+              />
+            </div>
+            {error && (
+              <p style={{ fontSize: '0.8rem', color: '#f87171', margin: '10px 0 0' }}>{error}</p>
+            )}
+            <PrimaryBtn onClick={handleReset} disabled={busy || !newPassword || !confirmPassword}>
+              {busy ? 'Saving…' : 'Update password →'}
+            </PrimaryBtn>
           </div>
         )}
 
