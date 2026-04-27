@@ -254,7 +254,16 @@ export function Jobs() {
                     </div>
                   </div>
                   <div>
-                    <label style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Job URL</label>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Job URL</label>
+                      <a
+                        href={`https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(job.position + ' ' + job.company)}`}
+                        target="_blank" rel="noreferrer"
+                        style={{ fontSize: '0.68rem', color: '#3b82f6', textDecoration: 'none' }}
+                      >
+                        Find on LinkedIn ↗
+                      </a>
+                    </div>
                     <input type="url" placeholder="https://..." value={editFields.url ?? ''} onChange={e => setEditFields(f => ({ ...f, url: e.target.value }))}
                       style={inputStyle} />
                   </div>

@@ -9,7 +9,6 @@ import uuid, csv, io, json, os
 from datetime import datetime
 
 from database import engine, jobs_table, init_db
-from scraper import scrape_linkedin_jobs
 
 STATUSES = ["Not Applied", "Applied", "Interview", "Offer", "Rejected"]
 
@@ -162,11 +161,22 @@ def clear_jobs():
 
 @app.post("/api/jobs", status_code=201)
 def add_job(body: JobCreate):
+    company  = body.company.strip()
+    position = body.position.strip()
+
+    # Deduplication check
+    with engine.connect() as conn:
+        existing = conn.execute(select(jobs_table)).fetchall()
+    for row in existing:
+        r = row_to_dict(row)
+        if r["company"].lower() == company.lower() and r["position"].lower() == position.lower():
+            raise HTTPException(status_code=409, detail="Job already exists")
+
     now = datetime.now().strftime("%Y-%m-%d")
     job = {
         "id":           str(uuid.uuid4()),
-        "company":      body.company.strip(),
-        "position":     body.position.strip(),
+        "company":      company,
+        "position":     position,
         "status":       body.status,
         "date_added":   now,
         "date_applied": now if body.status == "Applied" else None,
@@ -236,6 +246,7 @@ def delete_job(job_id: str):
 
 @app.post("/api/scrape")
 def scrape(search: str = "Software Engineer", location: str = "California"):
+    from scraper import scrape_linkedin_jobs
     return scrape_linkedin_jobs(search, location)
 
 

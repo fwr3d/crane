@@ -13,38 +13,36 @@ def scrape_linkedin_jobs(search_term, location):
 
     print(f"Scraping: {url}")
 
-    response = requests.get(url)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    response = requests.get(url, headers=headers)
 
-    soup = BeautifulSoup(response.text,'html.parser')
+    soup = BeautifulSoup(response.text, 'html.parser')
 
     job_cards = soup.find_all('div', class_='base-search-card__info')
     jobs = []
 
     for card in job_cards:
-        # Get position title
         title_tag = card.find('h3', class_='base-search-card__title')
         position = title_tag.text.strip() if title_tag else "Unknown"
-            # Get company name
+
         company_tag = card.find('h4', class_='base-search-card__subtitle')
         if company_tag:
             company_link = company_tag.find('a')
-            company = company_link.text.strip() if company_link else "Unknown"
+            company = company_link.text.strip() if company_link else company_tag.text.strip()
         else:
             company = "Unknown"
-        
+
         jobs.append({
             'company': company,
             'position': position,
-            'status': 'Found'
+            'status': 'Not Applied',
         })
     
     return jobs
-    # TODO: Build LinkedIn URL
-    # TODO: Get the page
-    # TODO: Parse jobs
-    # TODO: Return list of jobs
-    
-    
+
+
 
 def main():
     search = input("Job title to search: ")
