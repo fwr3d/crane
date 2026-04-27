@@ -1,73 +1,160 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import type { Job, Status } from '../types'
-import { StatusBadge } from '../components/StatusBadge'
+import { CompanyLogo } from '../components/CompanyLogo'
+import { STATUS_LIST, statusTokens } from '../components/statusTokens'
+import { StatusDot, StatusPill } from '../components/StatusBadge'
+import { linkedinJobsUrl } from '../utils/companyDomain'
 
-const STATUSES: Status[] = ['Not Applied', 'Applied', 'Interview', 'Offer', 'Rejected']
+type FocusFilter = 'all' | 'follow-up' | 'deadline-soon' | 'overdue' | 'missing-url' | 'has-notes'
 
-const statusBorder: Record<string, string> = {
-  'Not Applied': '#cbd5e1',
-  'Applied':     '#3b82f6',
-  'Interview':   '#f59e0b',
-  'Offer':       '#10b981',
-  'Rejected':    '#ef4444',
+const FOCUS_FILTERS: { id: FocusFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'follow-up', label: 'Needs follow-up' },
+  { id: 'deadline-soon', label: 'Due soon' },
+  { id: 'overdue', label: 'Overdue' },
+  { id: 'missing-url', label: 'Missing URL' },
+  { id: 'has-notes', label: 'Has notes' },
+]
+
+function daysSince(date: string | undefined, now: number): number | null {
+  if (!date) return null
+  return Math.floor((now - new Date(date).getTime()) / 86400000)
 }
 
-function normalizeStatus(s: string): Status {
-  return (STATUSES.find(k => k.toLowerCase() === s.toLowerCase()) ?? s) as Status
-}
-
-function isStale(job: Job): boolean {
-  if (!['Applied', 'Interview'].includes(job.status)) return false
-  const ref = job.date_applied ?? job.date_added
-  if (!ref) return false
-  return (Date.now() - new Date(ref).getTime()) / 86400000 > 14
-}
-
-function deadlineDays(deadline?: string): number | null {
-  if (!deadline) return null
-  return Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000)
+function daysUntil(date: string | undefined, now: number): number | null {
+  if (!date) return null
+  return Math.ceil((new Date(date).getTime() - now) / 86400000)
 }
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', border: '1px solid #e2e8f0', borderRadius: '6px',
-  padding: '7px 10px', fontSize: '0.82rem', outline: 'none',
-  color: '#0f172a', background: '#f8fafc', boxSizing: 'border-box',
+  width: '100%',
+  border: '1px solid var(--ink-150)',
+  borderRadius: 7,
+  padding: '7px 10px',
+  fontSize: '0.82rem',
+  outline: 'none',
+  color: 'var(--ink-800)',
+  background: 'white',
+  boxSizing: 'border-box',
+}
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  color: 'var(--ink-400)',
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+  marginBottom: 5,
+  display: 'block',
 }
 
 export function Jobs() {
-  const [jobs, setJobs]               = useState<Job[]>([])
-  const [search, setSearch]           = useState('')
-  const [statusFilter, setStatusFilter] = useState<Set<Status>>(new Set(STATUSES))
-  const [sort, setSort]               = useState('date_desc')
-  const [expandedId, setExpandedId]   = useState<string | null>(null)
-  const [editFields, setEditFields]   = useState<Partial<Job>>({})
-  const [saving, setSaving]           = useState(false)
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<Set<Status>>(new Set(STATUS_LIST))
+  const [focusFilter, setFocusFilter] = useState<FocusFilter>('all')
+  const [sort, setSort] = useState('date_desc')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editFields, setEditFields] = useState<Partial<Job>>({})
+  const [saving, setSaving] = useState(false)
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
-  const [bulkStatus, setBulkStatus]   = useState<Status>('Applied')
-  const [bulking, setBulking]         = useState(false)
+  const [bulkStatus, setBulkStatus] = useState<Status>('Applied')
+  const [bulking, setBulking] = useState(false)
+  const [linkedinUrls, setLinkedinUrls] = useState<Map<string, string>>(new Map())
+  const [now] = useState(() => Date.now())
 
-  const load = () =>
-    api.jobs.list({ search, status: [...statusFilter].join(','), sort }).then(setJobs)
+  const load = useCallback(() =>
+    api.jobs.list({ search, status: [...statusFilter].join(','), sort }).then(setJobs),
+  [search, statusFilter, sort])
 
-  useEffect(() => { load() }, [search, statusFilter, sort])
+  useEffect(() => { load() }, [load])
 
-  const toggleStatusFilter = (s: Status) =>
-    setStatusFilter(prev => {
-      const next = new Set(prev)
-      next.has(s) ? next.delete(s) : next.add(s)
+  useEffect(() => {
+    const missing = jobs.filter(job => !job.url)
+    if (missing.length === 0) return
+    Promise.all(missing.map(async job => [job.id, await linkedinJobsUrl(job.company, job.position)] as const))
+      .then(entries => setLinkedinUrls(new Map(entries)))
+  }, [jobs])
+
+  const visibleJobs = useMemo(() => jobs.filter(job => {
+    if (focusFilter === 'all') return true
+    const quiet = daysSince(job.date_applied ?? job.date_added, now)
+    const due = daysUntil(job.deadline, now)
+
+    if (focusFilter === 'follow-up') return ['Applied', 'Interview'].includes(job.status) && quiet !== null && quiet >= 14
+    if (focusFilter === 'deadline-soon') return due !== null && due >= 0 && due <= 7 && job.status !== 'Rejected'
+    if (focusFilter === 'overdue') return due !== null && due < 0 && job.status !== 'Rejected'
+    if (focusFilter === 'missing-url') return !job.url
+    if (focusFilter === 'has-notes') return Boolean(job.notes?.trim())
+    return true
+  }), [jobs, focusFilter, now])
+
+  const filteredCount = visibleJobs.length
+  const filtersActive = search.trim() !== '' || statusFilter.size !== STATUS_LIST.length || focusFilter !== 'all'
+
+  const selectedVisible = useMemo(
+    () => visibleJobs.filter(job => bulkSelected.has(job.id)).length,
+    [visibleJobs, bulkSelected],
+  )
+
+  const toggleStatusFilter = (status: Status) =>
+    setStatusFilter(previous => {
+      const next = new Set(previous)
+      if (next.has(status)) next.delete(status)
+      else next.add(status)
       return next
     })
 
+  const toggleBulk = (id: string) =>
+    setBulkSelected(previous => {
+      const next = new Set(previous)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const selectAll = () =>
+    setBulkSelected(selectedVisible === visibleJobs.length ? new Set() : new Set(visibleJobs.map(job => job.id)))
+
+  const resetFilters = () => {
+    setSearch('')
+    setStatusFilter(new Set(STATUS_LIST))
+    setFocusFilter('all')
+  }
+
   const expand = (job: Job) => {
-    if (expandedId === job.id) { setExpandedId(null); return }
+    if (expandedId === job.id) {
+      setExpandedId(null)
+      return
+    }
     setExpandedId(job.id)
-    setEditFields({ status: normalizeStatus(job.status), url: job.url ?? '', notes: job.notes ?? '', deadline: job.deadline ?? '' })
+    setEditFields({
+      status: job.status,
+      url: job.url ?? '',
+      notes: job.notes ?? '',
+      deadline: job.deadline ?? '',
+    })
+  }
+
+  const updateStatus = async (id: string, status: Status) => {
+    const previous = jobs
+    setJobs(current => current.map(job => job.id === id ? { ...job, status } : job))
+    try {
+      await api.jobs.update(id, { status })
+    } catch {
+      setJobs(previous)
+    }
   }
 
   const save = async (id: string) => {
     setSaving(true)
-    await api.jobs.update(id, editFields)
+    await api.jobs.update(id, {
+      status: editFields.status,
+      url: editFields.url,
+      notes: editFields.notes,
+      deadline: editFields.deadline,
+    })
     setSaving(false)
     setExpandedId(null)
     load()
@@ -75,19 +162,13 @@ export function Jobs() {
 
   const remove = async (id: string) => {
     await api.jobs.delete(id)
-    setBulkSelected(prev => { const n = new Set(prev); n.delete(id); return n })
-    load()
-  }
-
-  const toggleBulk = (id: string) =>
-    setBulkSelected(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+    setBulkSelected(previous => {
+      const next = new Set(previous)
+      next.delete(id)
       return next
     })
-
-  const selectAll = () =>
-    setBulkSelected(bulkSelected.size === jobs.length ? new Set() : new Set(jobs.map(j => j.id)))
+    load()
+  }
 
   const applyBulk = async () => {
     setBulking(true)
@@ -98,199 +179,302 @@ export function Jobs() {
   }
 
   return (
-    <div className="space-y-5" style={{ paddingBottom: bulkSelected.size > 0 ? '80px' : 0 }}>
-      <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', margin: 0 }}>
-        All Jobs
-      </h1>
+    <div className="fadeUp" style={{ maxWidth: 1280, paddingBottom: bulkSelected.size > 0 ? 86 : 0 }}>
+      <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-400)', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>
+            Application library
+          </div>
+          <h1 className="display" style={{ fontSize: 28, margin: 0 }}>
+            {filteredCount} <span style={{ color: 'var(--ink-300)' }}>of {jobs.length}</span>
+          </h1>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {filtersActive && (
+            <button
+              onClick={resetFilters}
+              style={{ fontSize: 12, color: 'var(--ink-400)', background: 'none', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={event => (event.currentTarget.style.color = 'var(--ink-800)')}
+              onMouseLeave={event => (event.currentTarget.style.color = 'var(--ink-400)')}
+            >
+              Clear filters
+            </button>
+          )}
+          {visibleJobs.length > 0 && (
+            <button
+              onClick={selectAll}
+              style={{ fontSize: 12, color: 'var(--ink-400)', background: 'none', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={event => (event.currentTarget.style.color = 'var(--ink-800)')}
+              onMouseLeave={event => (event.currentTarget.style.color = 'var(--ink-400)')}
+            >
+              {selectedVisible === visibleJobs.length ? 'Deselect all' : 'Select all'}
+            </button>
+          )}
+        </div>
+      </header>
 
-      {/* Filters */}
-      <div className="flex gap-2">
-        <input
-          className="flex-1 rounded-lg px-3 py-2 text-sm outline-none bg-white"
-          style={{ border: '1px solid #e2e8f0', fontSize: '0.85rem' }}
-          placeholder="Search company or position..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-          onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
-        />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: 380 }}>
+          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-300)', fontSize: 13 }}>
+            ⌕
+          </span>
+          <input
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+            placeholder="Search company or role..."
+            style={{
+              width: '100%',
+              height: 36,
+              padding: '0 12px 0 34px',
+              borderRadius: 8,
+              border: '1px solid var(--ink-150)',
+              background: 'white',
+              fontSize: 13,
+              color: 'var(--ink-800)',
+              outline: 'none',
+            }}
+            onFocus={event => (event.currentTarget.style.borderColor = 'var(--ink-400)')}
+            onBlur={event => (event.currentTarget.style.borderColor = 'var(--ink-150)')}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--ink-100)', borderRadius: 8, flexWrap: 'wrap' }}>
+          {STATUS_LIST.map(status => {
+            const selected = statusFilter.has(status)
+            return (
+              <button
+                key={status}
+                onClick={() => toggleStatusFilter(status)}
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: selected ? 'white' : 'transparent',
+                  color: selected ? 'var(--ink-800)' : 'var(--ink-400)',
+                  boxShadow: selected ? 'var(--shadow-sm)' : 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <StatusDot status={status} size={5} />
+                {status}
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ flex: 1 }} />
+
         <select
-          className="rounded-lg px-3 py-2 bg-white outline-none"
-          style={{ border: '1px solid #e2e8f0', fontSize: '0.85rem', color: '#475569' }}
           value={sort}
-          onChange={e => setSort(e.target.value)}
+          onChange={event => setSort(event.target.value)}
+          style={{
+            height: 36,
+            padding: '0 28px 0 12px',
+            borderRadius: 8,
+            border: '1px solid var(--ink-150)',
+            background: 'white',
+            fontSize: 12.5,
+            color: 'var(--ink-700)',
+            outline: 'none',
+            cursor: 'pointer',
+          }}
         >
-          <option value="date_desc">Date added</option>
-          <option value="company">Company A–Z</option>
-          <option value="status">Status</option>
-          <option value="deadline">Deadline</option>
+          <option value="date_desc">Most recent</option>
+          <option value="company">Company A-Z</option>
+          <option value="status">By status</option>
+          <option value="deadline">By deadline</option>
         </select>
       </div>
 
-      {/* Status pills */}
-      <div className="flex flex-wrap gap-1.5">
-        {STATUSES.map(s => (
-          <button key={s} onClick={() => toggleStatusFilter(s)} style={{
-            fontSize: '0.72rem', fontWeight: 500, padding: '3px 12px', borderRadius: 999,
-            cursor: 'pointer', transition: 'all 0.15s',
-            border: statusFilter.has(s) ? '1px solid #0f172a' : '1px solid #e2e8f0',
-            background: statusFilter.has(s) ? '#0f172a' : 'white',
-            color: statusFilter.has(s) ? 'white' : '#94a3b8',
-          }}>
-            {s}
-          </button>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+          Focus
+        </span>
+        <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--ink-100)', borderRadius: 8, flexWrap: 'wrap' }}>
+          {FOCUS_FILTERS.map(filter => {
+            const selected = focusFilter === filter.id
+            return (
+              <button
+                key={filter.id}
+                onClick={() => setFocusFilter(filter.id)}
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: selected ? 'white' : 'transparent',
+                  color: selected ? 'var(--ink-800)' : 'var(--ink-400)',
+                  boxShadow: selected ? 'var(--shadow-sm)' : 'none',
+                }}
+              >
+                {filter.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Count + select all */}
-      <div className="flex items-center justify-between">
-        <p style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{jobs.length} jobs</p>
-        {jobs.length > 0 && (
-          <button onClick={selectAll} style={{ fontSize: '0.72rem', color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}
-            onMouseEnter={e => (e.target as HTMLElement).style.color = '#0f172a'}
-            onMouseLeave={e => (e.target as HTMLElement).style.color = '#94a3b8'}
-          >
-            {bulkSelected.size === jobs.length ? 'Deselect all' : 'Select all'}
-          </button>
-        )}
-      </div>
-
-      {/* Job list */}
-      <div className="space-y-1.5">
-        {jobs.map(job => {
-          const ns         = normalizeStatus(job.status)
-          const borderColor = statusBorder[ns] ?? '#cbd5e1'
-          const stale      = isStale(job)
-          const ddays      = deadlineDays(job.deadline)
-          const isExpanded = expandedId === job.id
-          const isSelected = bulkSelected.has(job.id)
+      <div style={{ background: 'var(--card)', border: '1px solid var(--ink-150)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
+        {visibleJobs.map((job, index) => {
+          const quiet = daysSince(job.date_applied ?? job.date_added, now)
+          const age = daysSince(job.date_added, now)
+          const due = daysUntil(job.deadline, now)
+          const stale = ['Applied', 'Interview'].includes(job.status) && quiet !== null && quiet >= 14
+          const selected = bulkSelected.has(job.id)
+          const expanded = expandedId === job.id
+          const url = job.url || linkedinUrls.get(job.id) || '#'
+          const token = statusTokens[job.status]
 
           return (
-            <div key={job.id} className="bg-white transition-all" style={{
-              border: isSelected ? '1px solid #94a3b8' : '1px solid #e2e8f0',
-              borderLeft: `3px solid ${borderColor}`,
-              borderRadius: '10px',
-              overflow: 'hidden',
-            }}>
-              {/* Main row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px' }}>
+            <div key={job.id} style={{ borderTop: index === 0 ? 'none' : '1px solid var(--ink-100)', background: selected ? 'var(--ink-50)' : 'transparent' }}>
+              <div
+                className="row"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '20px 36px minmax(0, 1fr) auto auto auto',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '12px 18px',
+                  borderLeft: `3px solid ${token.dot}`,
+                }}
+              >
                 <input
                   type="checkbox"
-                  checked={isSelected}
+                  checked={selected}
                   onChange={() => toggleBulk(job.id)}
-                  style={{ accentColor: '#0f172a', width: '14px', height: '14px', flexShrink: 0 }}
+                  style={{ accentColor: 'var(--ink-900)', width: 14, height: 14 }}
                 />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', margin: 0 }} className="truncate">
+                <CompanyLogo company={job.company} size={32} />
+                <div style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => expand(job)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {job.position}
-                    </p>
-                    {job.url && (
-                      <a href={job.url} target="_blank" rel="noreferrer"
-                        style={{ fontSize: '0.7rem', color: '#3b82f6', flexShrink: 0 }}
-                        title="Open posting"
-                      >
-                        ↗
-                      </a>
+                    </span>
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={event => event.stopPropagation()}
+                      style={{ color: 'var(--ink-300)', display: 'inline-flex', textDecoration: 'none', flexShrink: 0 }}
+                      title={job.url ? 'Open posting' : 'Find on LinkedIn'}
+                    >
+                      ↗
+                    </a>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-400)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                    <span style={{ color: 'var(--ink-700)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.company}</span>
+                    {age !== null && (
+                      <>
+                        <span style={{ color: 'var(--ink-200)' }}>·</span>
+                        <span className="tabular">{age === 0 ? 'today' : `${age}d old`}</span>
+                      </>
+                    )}
+                    {job.deadline && (
+                      <>
+                        <span style={{ color: 'var(--ink-200)' }}>·</span>
+                        <span>{new Date(job.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                      </>
                     )}
                   </div>
-                  <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '1px 0 0' }} className="truncate">
-                    {job.company}
-                  </p>
                 </div>
 
-                {/* Indicators */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
                   {stale && (
-                    <span title="No update in 14+ days" style={{
-                      fontSize: '0.65rem', fontWeight: 600, color: '#b45309',
-                      background: '#fef3c7', border: '1px solid #fde68a',
-                      padding: '1px 7px', borderRadius: 999,
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>
+                      {quiet}d quiet
+                    </span>
+                  )}
+                  {due !== null && due <= 3 && job.status !== 'Rejected' && (
+                    <span style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      color: due < 0 ? 'var(--danger)' : 'var(--warn)',
+                      background: due < 0 ? 'var(--danger-bg)' : 'var(--warn-bg)',
+                      border: `1px solid ${due < 0 ? 'var(--danger-line)' : 'var(--warn-line)'}`,
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      whiteSpace: 'nowrap',
                     }}>
-                      Follow up
+                      {due < 0 ? `${Math.abs(due)}d overdue` : due === 0 ? 'Due today' : `${due}d left`}
                     </span>
                   )}
-                  {ddays !== null && ddays <= 3 && (
-                    <span title={`Deadline: ${job.deadline}`} style={{
-                      fontSize: '0.65rem', fontWeight: 600,
-                      color: ddays < 0 ? '#b91c1c' : '#b45309',
-                      background: ddays < 0 ? '#fee2e2' : '#fef3c7',
-                      border: `1px solid ${ddays < 0 ? '#fecaca' : '#fde68a'}`,
-                      padding: '1px 7px', borderRadius: 999,
-                    }}>
-                      {ddays < 0 ? 'Overdue' : ddays === 0 ? 'Due today' : `${ddays}d left`}
-                    </span>
-                  )}
-                  <StatusBadge status={ns} />
-                  {job.date_added && (
-                    <span className="hidden sm:block" style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>
-                      {job.date_added}
-                    </span>
-                  )}
-                  <button onClick={() => expand(job)} style={{
-                    fontSize: '0.75rem', color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer',
-                    transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s',
-                  }}>
-                    ▾
-                  </button>
                 </div>
+
+                <StatusPill status={job.status} onChange={status => updateStatus(job.id, status)} />
+
+                <button
+                  onClick={() => expand(job)}
+                  aria-label={expanded ? 'Collapse job details' : 'Expand job details'}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--ink-300)',
+                    padding: 4,
+                    transform: expanded ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 0.15s',
+                  }}
+                >
+                  ▾
+                </button>
               </div>
 
-              {/* Expanded panel */}
-              {isExpanded && (
-                <div style={{ borderTop: '1px solid #f1f5f9', padding: '14px 16px', background: '#fafafa', display: 'grid', gap: '12px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {expanded && (
+                <div style={{ padding: '8px 18px 18px 77px', background: 'var(--ink-50)', display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                     <div>
-                      <label style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Status</label>
-                      <select value={editFields.status} onChange={e => setEditFields(f => ({ ...f, status: e.target.value as Status }))}
-                        style={{ ...inputStyle }}>
-                        {STATUSES.map(s => <option key={s}>{s}</option>)}
+                      <label style={labelStyle}>Status</label>
+                      <select value={editFields.status} onChange={event => setEditFields(fields => ({ ...fields, status: event.target.value as Status }))} style={inputStyle}>
+                        {STATUS_LIST.map(status => <option key={status}>{status}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Deadline</label>
-                      <input type="date" value={editFields.deadline ?? ''} onChange={e => setEditFields(f => ({ ...f, deadline: e.target.value }))}
-                        style={inputStyle} />
+                      <label style={labelStyle}>Deadline</label>
+                      <input type="date" value={editFields.deadline ?? ''} onChange={event => setEditFields(fields => ({ ...fields, deadline: event.target.value }))} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Job URL</label>
+                      <input type="url" placeholder="https://..." value={editFields.url ?? ''} onChange={event => setEditFields(fields => ({ ...fields, url: event.target.value }))} style={inputStyle} />
                     </div>
                   </div>
+
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <label style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Job URL</label>
-                      <a
-                        href={`https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(job.position + ' ' + job.company)}`}
-                        target="_blank" rel="noreferrer"
-                        style={{ fontSize: '0.68rem', color: '#3b82f6', textDecoration: 'none' }}
-                      >
-                        Find on LinkedIn ↗
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                      <label style={labelStyle}>Notes</label>
+                      <a href={editFields.url || url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--applied)', textDecoration: 'none' }}>
+                        {editFields.url ? 'Open posting ↗' : 'Find on LinkedIn ↗'}
                       </a>
                     </div>
-                    <input type="url" placeholder="https://..." value={editFields.url ?? ''} onChange={e => setEditFields(f => ({ ...f, url: e.target.value }))}
-                      style={inputStyle} />
+                    <textarea
+                      rows={3}
+                      placeholder="Interview prep, contacts, salary discussions..."
+                      value={editFields.notes ?? ''}
+                      onChange={event => setEditFields(fields => ({ ...fields, notes: event.target.value }))}
+                      style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                    />
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Notes</label>
-                    <textarea rows={3} placeholder="Interview notes, contacts, salary info..." value={editFields.notes ?? ''}
-                      onChange={e => setEditFields(f => ({ ...f, notes: e.target.value }))}
-                      style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
-                  </div>
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <button onClick={() => remove(job.id)} style={{ fontSize: '0.75rem', color: '#cbd5e1', background: 'none', border: 'none', cursor: 'pointer' }}
-                      onMouseEnter={e => (e.target as HTMLElement).style.color = '#ef4444'}
-                      onMouseLeave={e => (e.target as HTMLElement).style.color = '#cbd5e1'}
+                    <button
+                      onClick={() => remove(job.id)}
+                      style={{ fontSize: 12, color: 'var(--ink-400)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      onMouseEnter={event => (event.currentTarget.style.color = 'var(--danger)')}
+                      onMouseLeave={event => (event.currentTarget.style.color = 'var(--ink-400)')}
                     >
                       Remove
                     </button>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => setExpandedId(null)} style={{
-                        fontSize: '0.78rem', padding: '6px 14px', borderRadius: '6px',
-                        background: 'white', color: '#64748b', border: '1px solid #e2e8f0', cursor: 'pointer',
-                      }}>
-                        Cancel
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setExpandedId(null)} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--ink-150)', background: 'white', color: 'var(--ink-700)', cursor: 'pointer' }}>
+                        Close
                       </button>
-                      <button onClick={() => save(job.id)} disabled={saving} style={{
-                        fontSize: '0.78rem', padding: '6px 14px', borderRadius: '6px',
-                        background: '#0f172a', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 500,
-                      }}>
+                      <button onClick={() => save(job.id)} disabled={saving} style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 6, background: 'var(--ink-900)', color: 'white', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
                         {saving ? 'Saving...' : 'Save'}
                       </button>
                     </div>
@@ -301,39 +485,40 @@ export function Jobs() {
           )
         })}
 
-        {jobs.length === 0 && (
-          <div className="text-center py-16">
-            <p style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>No jobs found.</p>
+        {visibleJobs.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--ink-300)', fontSize: 14 }}>
+            Nothing matches that filter.
           </div>
         )}
       </div>
 
-      {/* Bulk action bar */}
       {bulkSelected.size > 0 && (
         <div style={{
-          position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
-          background: '#0f172a', borderRadius: '12px', padding: '12px 20px',
-          display: 'flex', alignItems: 'center', gap: '16px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'var(--ink-900)',
+          borderRadius: 12,
+          padding: '10px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          boxShadow: 'var(--shadow-lg)',
+          zIndex: 40,
         }}>
-          <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+          <span style={{ fontSize: 12, color: '#94a3b8', paddingLeft: 4 }}>
             {bulkSelected.size} selected
           </span>
-          <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value as Status)} style={{
-            fontSize: '0.82rem', padding: '6px 10px', borderRadius: '6px',
-            background: '#1e293b', color: 'white', border: '1px solid #334155', outline: 'none',
-          }}>
-            {STATUSES.map(s => <option key={s}>{s}</option>)}
+          <span style={{ width: 1, height: 18, background: '#1e293b' }} />
+          <span style={{ fontSize: 12, color: '#cbd5e1' }}>Set status →</span>
+          <select value={bulkStatus} onChange={event => setBulkStatus(event.target.value as Status)} style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, background: '#1e293b', color: 'white', border: '1px solid #334155', outline: 'none' }}>
+            {STATUS_LIST.map(status => <option key={status}>{status}</option>)}
           </select>
-          <button onClick={applyBulk} disabled={bulking} style={{
-            fontSize: '0.82rem', fontWeight: 600, padding: '6px 16px', borderRadius: '6px',
-            background: 'white', color: '#0f172a', border: 'none', cursor: 'pointer',
-          }}>
-            {bulking ? 'Updating...' : 'Update'}
+          <button onClick={applyBulk} disabled={bulking} style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 6, background: 'var(--accent)', color: 'white', border: 'none', cursor: bulking ? 'not-allowed' : 'pointer' }}>
+            {bulking ? 'Applying...' : 'Apply'}
           </button>
-          <button onClick={() => setBulkSelected(new Set())} style={{
-            fontSize: '0.78rem', color: '#475569', background: 'none', border: 'none', cursor: 'pointer',
-          }}>
+          <button onClick={() => setBulkSelected(new Set())} style={{ fontSize: 12, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }}>
             Cancel
           </button>
         </div>

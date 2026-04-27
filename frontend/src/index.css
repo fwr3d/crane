@@ -1,11 +1,80 @@
 @import "tailwindcss";
 
+:root {
+  --ink-900: #0c111d;
+  --ink-800: #111827;
+  --ink-700: #1f2937;
+  --ink-500: #475569;
+  --ink-400: #64748b;
+  --ink-300: #94a3b8;
+  --ink-200: #cbd5e1;
+  --ink-150: #e2e8f0;
+  --ink-100: #eef2f7;
+  --ink-50: #f5f7fa;
+  --paper: #fbfaf7;
+  --card: #ffffff;
+  --accent: #18a957;
+  --accent-bg: #ecfaf1;
+  --accent-line: #b8ecca;
+  --warn: #c2710c;
+  --warn-bg: #fff5e6;
+  --warn-line: #ffe0b3;
+  --danger: #c2410c;
+  --danger-bg: #fff1ed;
+  --danger-line: #ffd5c2;
+  --interview: #6b4ef5;
+  --interview-bg: #f1edff;
+  --interview-line: #d8cdff;
+  --applied: #2563eb;
+  --applied-bg: #eaf1ff;
+  --applied-line: #c4d6f9;
+  --offer: #15803d;
+  --offer-bg: #e6f5ec;
+  --offer-line: #b8e0c5;
+  --rejected: #94a3b8;
+  --rejected-bg: #f1f5f9;
+  --rejected-line: #d8dee6;
+  --not-applied: #475569;
+  --not-applied-bg: #f1f5f9;
+  --not-applied-line: #d8dee6;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.10), 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: #f8fafc;
-  color: #0f172a;
-  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--paper);
+  color: var(--ink-800);
+  font-family: 'Figtree', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.display {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ink-900);
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fadeUp {
+  animation: fadeUp 0.25s ease-out both;
 }

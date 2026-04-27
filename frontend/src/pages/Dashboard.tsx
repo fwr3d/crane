@@ -1,263 +1,383 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import type { Job, Stats } from '../types'
-
-const STATUSES = ['Not Applied', 'Applied', 'Interview', 'Offer', 'Rejected']
-
-const barColors: Record<string, string> = {
-  'Not Applied': '#94a3b8',
-  'Applied':     '#3b82f6',
-  'Interview':   '#f59e0b',
-  'Offer':       '#10b981',
-  'Rejected':    '#ef4444',
-}
-
-const statusDot: Record<string, string> = {
-  'Not Applied': '#94a3b8',
-  'Applied':     '#3b82f6',
-  'Interview':   '#f59e0b',
-  'Offer':       '#10b981',
-  'Rejected':    '#ef4444',
-}
+import type { Job, Status } from '../types'
+import { CompanyLogo } from '../components/CompanyLogo'
+import { StatusDot, StatusPill } from '../components/StatusBadge'
+import { STATUS_LIST, statusTokens } from '../components/statusTokens'
+import { useAuth } from '../context/auth'
+import { linkedinJobsUrl } from '../utils/companyDomain'
 
 type QueueItem = {
-  job:      Job
-  label:    string | null
-  urgent:   boolean
-  action:   'Apply' | 'Ping'
+  job: Job
+  kind: 'deadline' | 'follow' | 'apply'
+  label: string | null
+  urgency: number
+  action: 'Apply' | 'Ping'
 }
 
-function buildQueue(jobs: Job[]): QueueItem[] {
-  const today = Date.now()
-  const seen  = new Set<string>()
-  const items: (QueueItem & { priority: number })[] = []
+function daysSince(date: string | undefined, now: number): number | null {
+  if (!date) return null
+  return Math.floor((now - new Date(date).getTime()) / 86400000)
+}
 
-  // 1. Passed deadlines
+function daysUntil(date: string | undefined, now: number): number | null {
+  if (!date) return null
+  return Math.ceil((new Date(date).getTime() - now) / 86400000)
+}
+
+function greeting(now: Date) {
+  const hour = now.getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function buildQueue(jobs: Job[], now: number): QueueItem[] {
+  const seen = new Set<string>()
+  const items: QueueItem[] = []
+
   for (const job of jobs) {
-    if (!job.deadline) continue
-    const days = Math.floor((today - new Date(job.deadline).getTime()) / 86400000)
-    if (days > 0 && !seen.has(job.id)) {
-      seen.add(job.id)
-      items.push({ job, label: `Deadline passed ${days}d ago`, urgent: true, action: 'Apply', priority: 200 + days })
-    }
+    const due = daysUntil(job.deadline, now)
+    if (due === null || due > 3 || job.status === 'Rejected') continue
+
+    seen.add(job.id)
+    items.push({
+      job,
+      kind: 'deadline',
+      label: due < 0 ? `Deadline passed ${Math.abs(due)}d ago` : due === 0 ? 'Deadline today' : `Deadline in ${due}d`,
+      urgency: due < 0 ? 300 + Math.abs(due) : due === 0 ? 250 : 200 - due,
+      action: 'Apply',
+    })
   }
 
-  // 2. Stale Applied / Interview
   for (const job of jobs) {
     if (!['Applied', 'Interview'].includes(job.status)) continue
-    const ref  = job.date_applied ?? job.date_added
-    if (!ref) continue
-    const days = Math.floor((today - new Date(ref).getTime()) / 86400000)
-    if (days >= 14 && !seen.has(job.id)) {
-      seen.add(job.id)
-      items.push({ job, label: `Follow up — ${days}d quiet`, urgent: true, action: 'Ping', priority: 100 + days })
-    }
+    const quiet = daysSince(job.date_applied ?? job.date_added, now)
+    if (quiet === null || quiet < 14 || seen.has(job.id)) continue
+
+    seen.add(job.id)
+    items.push({
+      job,
+      kind: 'follow',
+      label: `Follow up - ${quiet}d quiet`,
+      urgency: 100 + quiet,
+      action: 'Ping',
+    })
   }
 
-  // 3. Not Applied (fill remaining slots)
   for (const job of jobs) {
     if (job.status !== 'Not Applied' || seen.has(job.id)) continue
     seen.add(job.id)
-    items.push({ job, label: null, urgent: false, action: 'Apply', priority: 0 })
+    items.push({
+      job,
+      kind: 'apply',
+      label: null,
+      urgency: 0,
+      action: 'Apply',
+    })
   }
 
-  return items.sort((a, b) => b.priority - a.priority).slice(0, 6)
+  return items.sort((a, b) => b.urgency - a.urgency).slice(0, 6)
 }
 
-export function Dashboard() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [jobs,  setJobs]  = useState<Job[]>([])
-
-  useEffect(() => {
-    api.stats().then(setStats)
-    api.jobs.list().then(setJobs)
-  }, [])
-
-  if (!stats) return (
-    <div className="space-y-8 animate-pulse">
-      <div className="h-8 w-48 bg-slate-200 rounded" />
-      <div className="grid grid-cols-4 gap-4">
-        {[...Array(4)].map((_, i) => <div key={i} className="h-28 bg-slate-200 rounded-2xl" />)}
+function BigStat({ label, value, sub, accent = false }: { label: string; value: string | number; sub: string; accent?: boolean }) {
+  return (
+    <div style={{
+      background: accent ? 'var(--ink-900)' : 'var(--card)',
+      color: accent ? 'white' : 'var(--ink-900)',
+      border: accent ? 'none' : '1px solid var(--ink-150)',
+      borderRadius: 'var(--radius-lg)',
+      padding: '20px 22px',
+      boxShadow: accent ? 'none' : 'var(--shadow-sm)',
+    }}>
+      <div style={{ fontSize: 10.5, color: accent ? '#94a3b8' : 'var(--ink-400)', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>
+        {label}
+      </div>
+      <div className="tabular" style={{ fontSize: 42, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1, marginTop: 10 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 11.5, color: accent ? '#94a3b8' : 'var(--ink-400)', marginTop: 6 }}>
+        {sub}
       </div>
     </div>
   )
+}
 
-  const queue = buildQueue(jobs)
-  const inFlight = (stats.by_status['Applied'] ?? 0) + (stats.by_status['Interview'] ?? 0)
-  const max = Math.max(...STATUSES.map(s => stats.by_status[s as keyof typeof stats.by_status] ?? 0), 1)
+export function Dashboard({ goJobs }: { goJobs: () => void }) {
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [loading, setLoading] = useState(true)
+  const [linkedinUrls, setLinkedinUrls] = useState<Map<string, string>>(new Map())
+  const [now] = useState(() => Date.now())
+  const { profile } = useAuth()
+
+  const load = () => {
+    api.jobs.list()
+      .then(setJobs)
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (jobs.length === 0) return
+    Promise.all(jobs.map(async job => [job.id, await linkedinJobsUrl(job.company, job.position, job.url)] as const))
+      .then(entries => setLinkedinUrls(new Map(entries)))
+  }, [jobs])
+
+  const stats = useMemo(() => {
+    const by = Object.fromEntries(STATUS_LIST.map(status => [status, 0])) as Record<Status, number>
+    for (const job of jobs) by[job.status] = (by[job.status] ?? 0) + 1
+
+    const applied = by.Applied + by.Interview + by.Offer + by.Rejected
+    const replied = by.Interview + by.Offer + by.Rejected
+    const responseRate = applied ? Math.round((replied / applied) * 100) : 0
+    const inFlight = by.Applied + by.Interview
+    const stale = jobs.filter(job => {
+      if (!['Applied', 'Interview'].includes(job.status)) return false
+      const quiet = daysSince(job.date_applied ?? job.date_added, now)
+      return quiet !== null && quiet >= 14
+    }).length
+
+    return { by, total: jobs.length, responseRate, inFlight, stale }
+  }, [jobs, now])
+
+  const queue = useMemo(() => buildQueue(jobs, now), [jobs, now])
+
+  const recent = useMemo(() =>
+    [...jobs].sort((a, b) => (b.date_added ?? '').localeCompare(a.date_added ?? '')).slice(0, 5),
+  [jobs])
+
+  const weeks = useMemo(() => {
+    const buckets = Array(8).fill(0) as number[]
+    for (const job of jobs) {
+      const ref = job.date_applied ?? job.date_added
+      if (!ref) continue
+      const week = Math.floor((now - new Date(ref).getTime()) / (7 * 86400000))
+      if (week >= 0 && week < buckets.length) buckets[week]++
+    }
+    return buckets.reverse()
+  }, [jobs, now])
+
+  const updateStatus = async (id: string, status: Status) => {
+    const previous = jobs
+    setJobs(current => current.map(job => job.id === id ? { ...job, status } : job))
+    try {
+      await api.jobs.update(id, { status })
+    } catch {
+      setJobs(previous)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="fadeUp" style={{ maxWidth: 1080 }}>
+        <div className="animate-pulse" style={{ display: 'grid', gap: 24 }}>
+          <div style={{ height: 78, width: 360, background: 'var(--ink-100)', borderRadius: 12 }} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+            {[0, 1, 2, 3].map(i => <div key={i} style={{ height: 126, background: 'var(--ink-100)', borderRadius: 14 }} />)}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const date = new Date(now)
+  const firstName = profile?.name?.split(/\s+/)[0]
+  const maxWeek = Math.max(...weeks, 1)
 
   return (
-    <div className="space-y-8">
-
-      {/* Header */}
-      <div>
-        <p style={{ fontSize: '0.7rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}
-        </p>
-        <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '2rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', margin: '0 0 6px' }}>
-          {(() => { const h = new Date().getHours(); return h < 12 ? 'Good morning.' : h < 17 ? 'Good afternoon.' : 'Good evening.' })()}
+    <div className="fadeUp" style={{ maxWidth: 1080 }}>
+      <header style={{ marginBottom: 36 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-400)', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 12 }}>
+          {date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        </div>
+        <h1 className="display" style={{ fontSize: 28, margin: 0 }}>
+          {greeting(date)}{firstName ? `, ${firstName}.` : '.'}
         </h1>
-        {stats.total > 0 && (
-          <p style={{ fontSize: '0.9rem', color: '#64748b', margin: 0 }}>
-            You have <strong style={{ color: '#0f172a' }}>{inFlight} jobs</strong> in flight
-            {stats.stale > 0 && <> and <strong style={{ color: '#b45309' }}>{stats.stale} needing follow-up</strong></>}.
-          </p>
-        )}
+        <p style={{ fontSize: 16, color: 'var(--ink-500)', margin: '10px 0 0', maxWidth: 620, lineHeight: 1.55 }}>
+          You have <strong style={{ color: 'var(--ink-800)', fontWeight: 700 }}>{queue.length} things</strong> needing attention and{' '}
+          <strong style={{ color: 'var(--ink-800)', fontWeight: 700 }}>{stats.by.Interview} active interviews</strong> in flight.
+        </p>
+      </header>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 12, marginBottom: 32 }}>
+        <BigStat label="In flight" value={stats.inFlight} sub={`${stats.by.Interview} interviewing`} accent />
+        <BigStat label="Offers" value={stats.by.Offer} sub="open" />
+        <BigStat label="Response" value={`${stats.responseRate}%`} sub="reply rate" />
+        <BigStat label="Queue" value={stats.by['Not Applied']} sub="to apply" />
       </div>
 
-      {/* Metric cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-2xl p-5" style={{ background: '#0f172a' }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 600, color: '#64748b', letterSpacing: '0.1em', textTransform: 'uppercase' }}>In flight</p>
-          <p className="tabular-nums mt-2" style={{ fontFamily: "'Syne', sans-serif", fontSize: '2.6rem', fontWeight: 700, color: 'white', lineHeight: 1 }}>
-            {inFlight}
-          </p>
-          <p style={{ fontSize: '0.72rem', color: '#475569', marginTop: '6px' }}>{stats.by_status['Interview']} interviewing</p>
-        </div>
-
-        <div className="rounded-2xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Offers</p>
-          <p className="tabular-nums mt-2" style={{ fontFamily: "'Syne', sans-serif", fontSize: '2.6rem', fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>
-            {stats.by_status['Offer']}
-          </p>
-          <p style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px' }}>open</p>
-        </div>
-
-        <div className="rounded-2xl p-5 bg-white" style={{ border: '1px solid #e2e8f0' }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Response</p>
-          <p className="tabular-nums mt-2" style={{ fontFamily: "'Syne', sans-serif", fontSize: '2.6rem', fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>
-            {stats.response_rate}%
-          </p>
-          <p style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px' }}>reply rate</p>
-        </div>
-
-        <div className="rounded-2xl p-5" style={{ border: `1px solid ${stats.stale > 0 ? '#fde68a' : '#e2e8f0'}`, background: stats.stale > 0 ? '#fffbeb' : 'white' }}>
-          <p style={{ fontSize: '0.65rem', fontWeight: 600, color: stats.stale > 0 ? '#92400e' : '#94a3b8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Queue</p>
-          <p className="tabular-nums mt-2" style={{ fontFamily: "'Syne', sans-serif", fontSize: '2.6rem', fontWeight: 700, color: stats.stale > 0 ? '#b45309' : '#0f172a', lineHeight: 1 }}>
-            {stats.by_status['Not Applied']}
-          </p>
-          <p style={{ fontSize: '0.72rem', color: stats.stale > 0 ? '#92400e' : '#94a3b8', marginTop: '6px' }}>to apply</p>
-        </div>
-      </div>
-
-      {/* Two-column: queue + pipeline */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1rem', alignItems: 'start' }}>
-
-        {/* Today's queue */}
-        <div className="bg-white rounded-2xl p-6" style={{ border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-            <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a', margin: 0 }}>Today's queue</p>
-            <a href="#" style={{ fontSize: '0.75rem', color: '#94a3b8', textDecoration: 'none' }}
-              onClick={e => e.preventDefault()}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 24, alignItems: 'start' }}>
+        <section style={{ background: 'var(--card)', border: '1px solid var(--ink-150)', borderRadius: 'var(--radius-lg)', padding: 22, boxShadow: 'var(--shadow-sm)' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 18 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.015em', color: 'var(--ink-900)' }}>
+              Today's queue
+            </h2>
+            <button
+              onClick={goJobs}
+              style={{ fontSize: 12, color: 'var(--ink-400)', background: 'none', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={event => (event.currentTarget.style.color = 'var(--ink-800)')}
+              onMouseLeave={event => (event.currentTarget.style.color = 'var(--ink-400)')}
+            >
               See all →
-            </a>
+            </button>
           </div>
 
           {queue.length === 0 ? (
-            <p style={{ fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center', padding: '2rem 0' }}>
-              Nothing urgent — you're on top of it.
-            </p>
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+              Nothing urgent. Nice work.
+            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {queue.map((item, i) => (
-                <div key={item.job.id} style={{
-                  display: 'grid', gridTemplateColumns: '28px 1fr auto auto',
-                  alignItems: 'center', gap: '12px',
-                  padding: '10px 8px', borderRadius: '8px',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#cbd5e1', fontFamily: "'Syne', sans-serif" }}>
-                    {String(i + 1).padStart(2, '0')}
+            <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {queue.map((item, index) => (
+                <li key={`${item.job.id}-${item.kind}`} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '24px minmax(0, 1fr) auto auto',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '10px 8px',
+                  borderTop: index === 0 ? 'none' : '1px solid var(--ink-100)',
+                }}>
+                  <span className="tabular" style={{ fontSize: 11, color: 'var(--ink-300)', fontWeight: 700 }}>
+                    {String(index + 1).padStart(2, '0')}
                   </span>
-
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: '0.85rem', fontWeight: 500, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {item.job.position}
-                    </p>
-                    <p style={{ fontSize: '0.72rem', color: item.urgent ? '#f59e0b' : '#94a3b8', margin: '1px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {item.job.company}{item.label ? <> · <span style={{ color: item.urgent ? '#f59e0b' : '#94a3b8' }}>{item.label}</span></> : ''}
-                    </p>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-400)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.job.company}</span>
+                      {item.label && (
+                        <>
+                          <span style={{ color: 'var(--ink-200)' }}>·</span>
+                          <span style={{
+                            color: item.urgency >= 300 ? 'var(--danger)' : item.urgency >= 100 ? 'var(--warn)' : 'var(--ink-500)',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {item.label}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
-
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '5px',
-                    background: '#f1f5f9', borderRadius: '20px', padding: '3px 10px 3px 7px',
-                    flexShrink: 0,
-                  }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: statusDot[item.job.status], flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.7rem', color: '#475569', whiteSpace: 'nowrap' }}>{item.job.status}</span>
-                  </div>
-
+                  <StatusPill status={item.job.status} onChange={status => updateStatus(item.job.id, status)} />
                   <a
-                    href={`https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(item.job.position + ' ' + item.job.company)}`}
-                    target="_blank" rel="noreferrer"
+                    href={linkedinUrls.get(item.job.id) || '#'}
+                    target="_blank"
+                    rel="noreferrer"
                     style={{
-                      fontSize: '0.72rem', fontWeight: 600,
-                      color: '#0f172a', background: 'white',
-                      border: '1px solid #e2e8f0', borderRadius: '6px',
-                      padding: '5px 12px', textDecoration: 'none', flexShrink: 0,
-                      transition: 'border-color 0.15s',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      padding: '5px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--ink-150)',
+                      background: 'white',
+                      color: 'var(--ink-700)',
+                      textDecoration: 'none',
+                      whiteSpace: 'nowrap',
                     }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = '#94a3b8')}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
                   >
                     {item.action}
                   </a>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ background: 'var(--ink-900)', color: 'white', borderRadius: 'var(--radius-lg)', padding: 22 }}>
+            <div style={{ fontSize: 10.5, color: '#64748b', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>
+              Momentum
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
+              <div className="tabular" style={{ fontSize: 38, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
+                {weeks[weeks.length - 1]}
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>this week</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, marginTop: 18, height: 50 }}>
+              {weeks.map((value, index) => {
+                const isLast = index === weeks.length - 1
+                return (
+                  <div
+                    key={index}
+                    title={`${value} jobs`}
+                    style={{
+                      flex: 1,
+                      height: `${(value / maxWeek) * 100}%`,
+                      minHeight: 2,
+                      background: isLast ? 'var(--accent)' : 'rgba(255,255,255,0.18)',
+                      borderRadius: 2,
+                    }}
+                  />
+                )
+              })}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: '#475569' }}>
+              <span>8w ago</span>
+              <span>now</span>
+            </div>
+          </div>
+
+          <div style={{ background: 'var(--card)', border: '1px solid var(--ink-150)', borderRadius: 'var(--radius-lg)', padding: 22, boxShadow: 'var(--shadow-sm)' }}>
+            <div style={{ fontSize: 10.5, color: 'var(--ink-400)', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 14 }}>
+              Pipeline
+            </div>
+            <div style={{ display: 'flex', height: 8, borderRadius: 99, overflow: 'hidden', marginBottom: 14, background: 'var(--ink-100)' }}>
+              {STATUS_LIST.map(status => {
+                const value = stats.by[status] || 0
+                const pct = stats.total > 0 ? (value / stats.total) * 100 : 0
+                return <div key={status} style={{ width: `${pct}%`, background: statusTokens[status].dot }} title={`${status}: ${value}`} />
+              })}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {STATUS_LIST.map(status => (
+                <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                  <StatusDot status={status} size={6} />
+                  <span style={{ flex: 1, color: 'var(--ink-700)' }}>{status}</span>
+                  <span className="tabular" style={{ color: 'var(--ink-400)', fontWeight: 700 }}>{stats.by[status] || 0}</span>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-
-        {/* Pipeline */}
-        <div className="bg-white rounded-2xl p-6" style={{ border: '1px solid #e2e8f0' }}>
-          <p style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', marginBottom: '1rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            Pipeline
-          </p>
-
-          {/* Stacked bar */}
-          <div style={{ display: 'flex', height: '6px', borderRadius: '99px', overflow: 'hidden', marginBottom: '1.25rem', gap: '2px' }}>
-            {STATUSES.map(s => {
-              const count = stats.by_status[s as keyof typeof stats.by_status] ?? 0
-              const pct   = stats.total > 0 ? (count / stats.total) * 100 : 0
-              return pct > 0 ? (
-                <div key={s} style={{ width: `${pct}%`, background: barColors[s], borderRadius: '99px' }} />
-              ) : null
-            })}
           </div>
+        </section>
+      </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {STATUSES.map(s => {
-              const count = stats.by_status[s as keyof typeof stats.by_status] ?? 0
+      {recent.length > 0 && (
+        <section style={{ marginTop: 32 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 16px', letterSpacing: '-0.015em', color: 'var(--ink-900)' }}>
+            Recently added
+          </h2>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--ink-150)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
+            {recent.map((job, index) => {
+              const age = daysSince(job.date_added, now)
               return (
-                <div key={s} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: statusDot[s], flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.78rem', color: '#475569' }}>{s}</span>
+                <div key={job.id} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '40px minmax(0, 1fr) auto',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '12px 18px',
+                  borderTop: index === 0 ? 'none' : '1px solid var(--ink-100)',
+                }}>
+                  <CompanyLogo company={job.company} size={32} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {job.position}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-400)', marginTop: 1 }}>
+                      {job.company}{age !== null ? ` · added ${age === 0 ? 'today' : `${age}d ago`}` : ''}
+                    </div>
                   </div>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0f172a', fontFamily: "'Syne', sans-serif" }}>{count}</span>
+                  <StatusPill status={job.status} onChange={status => updateStatus(job.id, status)} />
                 </div>
               )
             })}
           </div>
-
-          {stats.total > 0 && (
-            <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Response rate</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#0f172a' }}>{stats.response_rate}%</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Offer rate</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#0f172a' }}>{stats.offer_rate}%</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
+        </section>
+      )}
     </div>
   )
 }

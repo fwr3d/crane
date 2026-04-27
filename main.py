@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
@@ -245,9 +245,57 @@ def delete_job(job_id: str):
 
 
 @app.post("/api/scrape")
-def scrape(search: str = "Software Engineer", location: str = "California"):
+def scrape(
+    search: str = "Software Engineer",
+    location: str = "California",
+    job_type: Optional[list[str]] = Query(None),
+    experience: Optional[list[str]] = Query(None),
+    workplace: Optional[list[str]] = Query(None),
+    date_posted: str | None = None,
+    easy_apply: bool = False,
+):
     from scraper import scrape_linkedin_jobs
-    return scrape_linkedin_jobs(search, location)
+    return scrape_linkedin_jobs(
+        search,
+        location,
+        job_types=job_type,
+        experience_levels=experience,
+        workplace_types=workplace,
+        date_posted=date_posted,
+        easy_apply=easy_apply,
+    )
+
+
+@app.post("/api/scrape/stream")
+def scrape_stream(
+    search: str = "Software Engineer",
+    location: str = "California",
+    job_type: Optional[list[str]] = Query(None),
+    experience: Optional[list[str]] = Query(None),
+    workplace: Optional[list[str]] = Query(None),
+    date_posted: str | None = None,
+    easy_apply: bool = False,
+):
+    from scraper import scrape_linkedin_job_pages
+
+    def events():
+        total = 0
+        for event in scrape_linkedin_job_pages(
+            search,
+            location,
+            job_types=job_type,
+            experience_levels=experience,
+            workplace_types=workplace,
+            date_posted=date_posted,
+            easy_apply=easy_apply,
+        ):
+            if event["type"] == "page":
+                total += len(event["jobs"])
+                event["total"] = total
+            yield json.dumps(event) + "\n"
+        yield json.dumps({"type": "done", "total": total}) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
 
 
 @app.get("/api/export")

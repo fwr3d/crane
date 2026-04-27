@@ -1,45 +1,203 @@
 import requests
+import time
 from bs4 import BeautifulSoup
-from urllib.parse import quote
-def scrape_linkedin_jobs(search_term, location):
+from urllib.parse import urlencode
+
+JOB_TYPE_CODES = {
+    "full-time": "F",
+    "part-time": "P",
+    "contract": "C",
+    "temporary": "T",
+    "volunteer": "V",
+    "internship": "I",
+    "other": "O",
+}
+
+EXPERIENCE_CODES = {
+    "internship": "1",
+    "entry": "2",
+    "associate": "3",
+    "mid-senior": "4",
+    "director": "5",
+    "executive": "6",
+}
+
+WORKPLACE_CODES = {
+    "on-site": "1",
+    "remote": "2",
+    "hybrid": "3",
+}
+
+DATE_POSTED_CODES = {
+    "past-24h": "r86400",
+    "past-week": "r604800",
+    "past-month": "r2592000",
+}
+
+
+def _csv_codes(values, mapping):
+    codes = [mapping[v] for v in values or [] if v in mapping]
+    return ",".join(codes) if codes else None
+
+
+def _search_params(
+    search_term,
+    location,
+    job_types=None,
+    experience_levels=None,
+    workplace_types=None,
+    date_posted=None,
+    easy_apply=False,
+):
+    params = {
+        "keywords": search_term,
+        "location": location,
+    }
+    job_type_codes = _csv_codes(job_types, JOB_TYPE_CODES)
+    experience_codes = _csv_codes(experience_levels, EXPERIENCE_CODES)
+    workplace_codes = _csv_codes(workplace_types, WORKPLACE_CODES)
+
+    if job_type_codes:
+        params["f_JT"] = job_type_codes
+    if experience_codes:
+        params["f_E"] = experience_codes
+    if workplace_codes:
+        params["f_WT"] = workplace_codes
+    if date_posted in DATE_POSTED_CODES:
+        params["f_TPR"] = DATE_POSTED_CODES[date_posted]
+    if easy_apply:
+        params["f_AL"] = "true"
+
+    return params
+
+
+def scrape_linkedin_job_pages(
+    search_term,
+    location,
+    job_types=None,
+    experience_levels=None,
+    workplace_types=None,
+    date_posted=None,
+    easy_apply=False,
+    max_pages=100,
+):
+    """
+    Yield LinkedIn jobs one result page at a time.
+    """
+    params = _search_params(
+        search_term,
+        location,
+        job_types=job_types,
+        experience_levels=experience_levels,
+        workplace_types=workplace_types,
+        date_posted=date_posted,
+        easy_apply=easy_apply,
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    seen = set()
+    max_pages = max(1, int(max_pages or 100))
+
+    for page in range(max_pages):
+        page_params = {**params, "start": page * 10}
+        url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?{urlencode(page_params)}"
+
+        print(f"Scraping: {url}")
+
+        if page > 0:
+            time.sleep(0.75)
+
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 429:
+            time.sleep(3)
+            response = requests.get(url, headers=headers, timeout=15)
+            if response.status_code == 429:
+                yield {
+                    "type": "rate_limited",
+                    "page": page + 1,
+                    "jobs": [],
+                    "message": "LinkedIn slowed the search down. Showing the jobs found so far.",
+                }
+                break
+        if response.status_code in (400, 404):
+            break
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        job_cards = soup.select('li div.base-search-card__info, div.base-search-card__info')
+        if not job_cards:
+            break
+
+        page_jobs = []
+        added_this_page = 0
+        for card in job_cards:
+            title_tag = card.find('h3', class_='base-search-card__title')
+            position = title_tag.text.strip() if title_tag else "Unknown"
+
+            company_tag = card.find('h4', class_='base-search-card__subtitle')
+            if company_tag:
+                company_link = company_tag.find('a')
+                company = company_link.text.strip() if company_link else company_tag.text.strip()
+            else:
+                company = "Unknown"
+
+            parent = card.find_parent('div', class_='base-card') or card.find_parent('li')
+            link_tag = parent.find('a', class_='base-card__full-link') if parent else None
+            job_url = link_tag.get('href').strip() if link_tag and link_tag.get('href') else None
+            dedupe_key = job_url or f"{company.lower()}::{position.lower()}"
+            if dedupe_key in seen:
+                continue
+
+            seen.add(dedupe_key)
+            added_this_page += 1
+            page_jobs.append({
+                'company': company,
+                'position': position,
+                'status': 'Not Applied',
+                'url': job_url,
+            })
+
+        if page_jobs:
+            yield {
+                "type": "page",
+                "page": page + 1,
+                "jobs": page_jobs,
+            }
+
+        if added_this_page == 0:
+            break
+
+
+def scrape_linkedin_jobs(
+    search_term,
+    location,
+    job_types=None,
+    experience_levels=None,
+    workplace_types=None,
+    date_posted=None,
+    easy_apply=False,
+    max_pages=100,
+):
     """
     Scrape jobs from LinkedIn
     Returns list of job dictionaries
     """
-    keywords = quote(search_term)
-    loc = quote(location)
-
-    url = f"https://www.linkedin.com/jobs/search/?keywords={keywords}&location={loc}"
-
-    print(f"Scraping: {url}")
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-    response = requests.get(url, headers=headers)
-
-    soup = BeautifulSoup(response.text, 'html.parser')
-
-    job_cards = soup.find_all('div', class_='base-search-card__info')
     jobs = []
+    for event in scrape_linkedin_job_pages(
+        search_term,
+        location,
+        job_types=job_types,
+        experience_levels=experience_levels,
+        workplace_types=workplace_types,
+        date_posted=date_posted,
+        easy_apply=easy_apply,
+        max_pages=max_pages,
+    ):
+        if event["type"] == "page":
+            jobs.extend(event["jobs"])
 
-    for card in job_cards:
-        title_tag = card.find('h3', class_='base-search-card__title')
-        position = title_tag.text.strip() if title_tag else "Unknown"
-
-        company_tag = card.find('h4', class_='base-search-card__subtitle')
-        if company_tag:
-            company_link = company_tag.find('a')
-            company = company_link.text.strip() if company_link else company_tag.text.strip()
-        else:
-            company = "Unknown"
-
-        jobs.append({
-            'company': company,
-            'position': position,
-            'status': 'Not Applied',
-        })
-    
     return jobs
 
 

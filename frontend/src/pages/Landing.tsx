@@ -28,7 +28,7 @@ export function Landing() {
           </span>
         </div>
         <a
-          href="/app"
+          href="/onboarding"
           style={{
             ...BODY,
             fontSize: '0.82rem', fontWeight: 600,
@@ -65,7 +65,7 @@ export function Landing() {
         </p>
 
         <a
-          href="/app"
+          href="/onboarding"
           style={{
             ...HEADING,
             fontSize: '0.95rem', fontWeight: 700,
@@ -82,7 +82,7 @@ export function Landing() {
         </a>
 
         <p style={{ ...BODY, fontSize: '0.78rem', color: '#475569', marginTop: '1.25rem' }}>
-          Free · No signup · Works offline
+          Free to start. Your search stays organized.
         </p>
       </section>
 

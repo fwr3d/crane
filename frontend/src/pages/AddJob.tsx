@@ -15,7 +15,7 @@ const labelStyle: React.CSSProperties = {
   letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px',
 }
 
-export function AddJob() {
+export function AddJob({ onAdded }: { onAdded?: () => void }) {
   const [company,  setCompany]  = useState('')
   const [position, setPosition] = useState('')
   const [status,   setStatus]   = useState<Status>('Not Applied')
@@ -35,15 +35,16 @@ export function AddJob() {
       deadline: deadline || undefined,
       notes:    notes    || undefined,
     })
+    setLoading(false)
+    if (onAdded) { onAdded(); return }
     setCompany(''); setPosition(''); setStatus('Not Applied')
     setUrl(''); setDeadline(''); setNotes('')
     setSaved(true)
-    setLoading(false)
     setTimeout(() => setSaved(false), 2500)
   }
 
   return (
-    <div style={{ maxWidth: '480px' }}>
+    <div className="fadeUp" style={{ maxWidth: '720px' }}>
       <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', margin: '0 0 1.75rem 0' }}>
         Add Job
       </h1>
