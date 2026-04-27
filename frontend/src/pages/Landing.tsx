@@ -3,30 +3,27 @@ import craneLogo from '../assets/crane.svg'
 const HEADING = { fontFamily: "'Syne', sans-serif" }
 const BODY    = { fontFamily: "'Figtree', system-ui, sans-serif" }
 
-const features = [
-  {
-    title: 'Track everything',
-    desc:  'Add jobs manually or scrape LinkedIn directly. Every application in one place.',
-  },
-  {
-    title: 'Know where you stand',
-    desc:  'Pipeline breakdown, response rates, offer rates. See your search clearly.',
-  },
-  {
-    title: 'Move fast',
-    desc:  'Update statuses in one click. No bloat, no friction, just your job search.',
-  },
-]
-
 export function Landing() {
   return (
-    <div style={{ ...BODY, background: '#0c111d', minHeight: '100vh', color: 'white' }}>
+    <div style={{
+      ...BODY,
+      background: '#0c111d',
+      color: 'white',
+      minHeight: '100vh',
+      overflow: 'hidden',
+      display: 'grid',
+      gridTemplateRows: 'auto 1fr auto',
+    }}>
 
       {/* Nav */}
-      <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 3rem', borderBottom: '1px solid #ffffff0f' }}>
+      <nav style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '1.25rem 3rem',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img src={craneLogo} alt="Crane" style={{ width: '28px', height: '28px' }} />
-          <span style={{ ...HEADING, fontWeight: 700, fontSize: '0.85rem', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+          <img src={craneLogo} alt="Crane" style={{ width: '26px', height: '26px' }} />
+          <span style={{ ...HEADING, fontWeight: 700, fontSize: '0.82rem', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
             Crane
           </span>
         </div>
@@ -34,77 +31,72 @@ export function Landing() {
           href="/app"
           style={{
             ...BODY,
-            fontSize: '0.82rem',
-            fontWeight: 500,
-            color: '#0c111d',
-            background: 'white',
-            padding: '8px 20px',
-            borderRadius: '8px',
+            fontSize: '0.82rem', fontWeight: 600,
+            color: '#0c111d', background: 'white',
+            padding: '9px 18px', borderRadius: '8px',
             textDecoration: 'none',
-            transition: 'opacity 0.15s',
+            transition: 'opacity 0.15s ease, transform 0.15s ease',
           }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+          onMouseLeave={e => { e.currentTarget.style.opacity = '1';   e.currentTarget.style.transform = 'translateY(0)' }}
         >
           Open app
         </a>
       </nav>
 
       {/* Hero */}
-      <section style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '7rem 2rem 5rem' }}>
-        <div style={{ marginBottom: '2rem' }}>
-          <img src={craneLogo} alt="" style={{ width: '72px', height: '72px' }} />
-        </div>
+      <section style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', textAlign: 'center', padding: '2rem',
+      }}>
+        <img
+          src={craneLogo}
+          alt=""
+          style={{ width: 'clamp(160px, 24vw, 240px)', height: 'auto', marginBottom: '2rem' }}
+        />
 
-        <h1 style={{ ...HEADING, fontSize: 'clamp(2.8rem, 6vw, 5rem)', fontWeight: 800, lineHeight: 1.05, letterSpacing: '-0.03em', margin: '0 0 1.5rem', maxWidth: '700px' }}>
-          Your job search,<br />finally under control.
-        </h1>
-
-        <p style={{ fontSize: '1.05rem', color: '#64748b', maxWidth: '480px', lineHeight: 1.7, margin: '0 0 2.5rem' }}>
-          Crane tracks every application, shows you where things stand, and scrapes LinkedIn so you never lose a lead.
+        <p style={{
+          ...HEADING,
+          fontSize: '0.78rem', fontWeight: 600,
+          letterSpacing: '0.22em', textTransform: 'uppercase',
+          color: '#94a3b8', margin: '0 0 2.25rem',
+        }}>
+          The job tracker that keeps up.
         </p>
 
         <a
           href="/app"
           style={{
             ...HEADING,
-            fontSize: '0.9rem',
-            fontWeight: 700,
-            color: '#0c111d',
-            background: 'white',
-            padding: '14px 32px',
-            borderRadius: '10px',
+            fontSize: '0.95rem', fontWeight: 700,
+            color: '#0c111d', background: 'white',
+            padding: '16px 30px', borderRadius: '10px',
             textDecoration: 'none',
-            letterSpacing: '0.01em',
-            transition: 'opacity 0.15s',
+            boxShadow: '0 10px 30px -10px rgba(255,255,255,0.25)',
+            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
           }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 14px 36px -10px rgba(255,255,255,0.35)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)';    e.currentTarget.style.boxShadow = '0 10px 30px -10px rgba(255,255,255,0.25)' }}
         >
-          Get started
+          Open the app
         </a>
-      </section>
 
-      {/* Divider */}
-      <div style={{ height: '1px', background: '#ffffff0a', margin: '0 3rem' }} />
-
-      {/* Features */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1px', background: '#ffffff0a', margin: '4rem 3rem', borderRadius: '16px', overflow: 'hidden' }}>
-        {features.map(f => (
-          <div key={f.title} style={{ background: '#0c111d', padding: '2.5rem 2rem' }}>
-            <h3 style={{ ...HEADING, fontSize: '1rem', fontWeight: 700, color: 'white', margin: '0 0 0.75rem', letterSpacing: '-0.01em' }}>
-              {f.title}
-            </h3>
-            <p style={{ fontSize: '0.88rem', color: '#475569', lineHeight: 1.7, margin: 0 }}>
-              {f.desc}
-            </p>
-          </div>
-        ))}
+        <p style={{ ...BODY, fontSize: '0.78rem', color: '#475569', marginTop: '1.25rem' }}>
+          Free · No signup · Works offline
+        </p>
       </section>
 
       {/* Footer */}
-      <footer style={{ textAlign: 'center', padding: '2rem', borderTop: '1px solid #ffffff0a' }}>
-        <p style={{ fontSize: '0.72rem', color: '#1e293b', margin: 0 }}>Crane — built for the search.</p>
+      <footer style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '1.25rem 3rem',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img src={craneLogo} alt="" style={{ width: '14px', height: '14px', opacity: 0.5 }} />
+          <span style={{ fontSize: '0.75rem', color: '#475569' }}>Crane — built for the search.</span>
+        </div>
+        <span style={{ fontSize: '0.75rem', color: '#475569' }}>© 2025</span>
       </footer>
 
     </div>

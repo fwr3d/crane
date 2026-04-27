@@ -13,8 +13,8 @@
       "Bash(Select-Object -ExpandProperty Content)",
       "PowerShell(Invoke-WebRequest -Uri http://localhost:8000/api/stats -UseBasicParsing | Select-Object -ExpandProperty Content)",
       "PowerShell(Get-NetTCPConnection *)",
-      "mcp__claude_ai_Figma__whoami",
-      "mcp__claude_ai_Figma__create_new_file"
+      "Read(//c/Users/fedeb/Downloads/**)",
+      "Bash(unzip -o \"Crane \\(1\\).zip\" -d \"Crane_design\")"
     ]
   }
 }
