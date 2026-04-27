@@ -14,13 +14,14 @@ const labelStyle: React.CSSProperties = {
 }
 
 export function Scrape() {
-  const [search,   setSearch]   = useState('Software Engineer')
-  const [location, setLocation] = useState('California')
-  const [results,  setResults]  = useState<Job[] | null>(null)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [loading,  setLoading]  = useState(false)
-  const [adding,   setAdding]   = useState(false)
-  const [done,     setDone]     = useState(false)
+  const [search,        setSearch]        = useState('Software Engineer')
+  const [location,      setLocation]      = useState('California')
+  const [companyFilter, setCompanyFilter] = useState('')
+  const [results,       setResults]       = useState<Job[] | null>(null)
+  const [selected,      setSelected]      = useState<Set<number>>(new Set())
+  const [loading,       setLoading]       = useState(false)
+  const [adding,        setAdding]        = useState(false)
+  const [done,          setDone]          = useState(false)
 
   const scrape = async () => {
     setLoading(true)
@@ -28,7 +29,10 @@ export function Scrape() {
     setSelected(new Set())
     setDone(false)
     const jobs = await api.scrape(search, location)
-    setResults(jobs)
+    const filtered = companyFilter
+      ? jobs.filter(job => job.company.toLowerCase().includes(companyFilter.toLowerCase()))
+      : jobs
+    setResults(filtered)
     setLoading(false)
   }
 
@@ -79,6 +83,12 @@ export function Scrape() {
               onFocus={e => (e.target.style.borderColor = '#94a3b8')}
               onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
           </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Company (optional filter)</label>
+          <input style={inputStyle} value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} placeholder="Filter results by company"
+            onFocus={e => (e.target.style.borderColor = '#94a3b8')}
+            onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
         </div>
         <button onClick={scrape} disabled={loading} className="w-full rounded-lg transition-colors" style={{
           padding: '10px', background: loading ? '#64748b' : '#0f172a', color: 'white',
