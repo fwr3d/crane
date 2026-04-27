@@ -3,14 +3,15 @@ import { api } from '../api'
 import type { Job } from '../types'
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px',
-  padding: '10px 12px', fontSize: '0.875rem', outline: 'none',
-  color: '#0f172a', background: 'white', boxSizing: 'border-box',
+  width: '100%', border: '1px solid #cbd5e1', borderRadius: '12px',
+  padding: '12px 14px', fontSize: '0.875rem', outline: 'none',
+  color: '#0f172a', background: '#fafbfc', boxSizing: 'border-box',
+  transition: 'all 200ms ease',
 }
 
 const labelStyle: React.CSSProperties = {
-  display: 'block', fontSize: '0.68rem', fontWeight: 500, color: '#94a3b8',
-  letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px',
+  display: 'block', fontSize: '0.7rem', fontWeight: 600, color: '#64748b',
+  letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '8px',
 }
 
 export function Scrape() {
@@ -69,30 +70,51 @@ export function Scrape() {
         Scrape LinkedIn
       </h1>
 
-      <div className="bg-white rounded-2xl p-6 space-y-5" style={{ border: '1px solid #e2e8f0', maxWidth: '480px' }}>
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <label style={labelStyle}>Job title</label>
-            <input style={inputStyle} value={search} onChange={e => setSearch(e.target.value)}
-              onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
+      <div className="bg-white rounded-2xl p-8 space-y-6" style={{ border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label style={labelStyle}>Job title</label>
+              <input style={inputStyle} value={search} onChange={e => setSearch(e.target.value)}
+                onFocus={e => {
+                  e.target.style.borderColor = '#94a3b8'
+                  e.target.style.background = 'white'
+                }}
+                onBlur={e => {
+                  e.target.style.borderColor = '#cbd5e1'
+                  e.target.style.background = '#fafbfc'
+                }} />
+            </div>
+            <div>
+              <label style={labelStyle}>Location</label>
+              <input style={inputStyle} value={location} onChange={e => setLocation(e.target.value)}
+                onFocus={e => {
+                  e.target.style.borderColor = '#94a3b8'
+                  e.target.style.background = 'white'
+                }}
+                onBlur={e => {
+                  e.target.style.borderColor = '#cbd5e1'
+                  e.target.style.background = '#fafbfc'
+                }} />
+            </div>
           </div>
-          <div className="flex-1">
-            <label style={labelStyle}>Location</label>
-            <input style={inputStyle} value={location} onChange={e => setLocation(e.target.value)}
-              onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
+          <div>
+            <label style={labelStyle}>Company filter (optional)</label>
+            <input style={inputStyle} value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} placeholder="Leave blank to show all companies"
+              onFocus={e => {
+                e.target.style.borderColor = '#94a3b8'
+                e.target.style.background = 'white'
+              }}
+              onBlur={e => {
+                e.target.style.borderColor = '#cbd5e1'
+                e.target.style.background = '#fafbfc'
+              }} />
           </div>
         </div>
-        <div>
-          <label style={labelStyle}>Company (optional filter)</label>
-          <input style={inputStyle} value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} placeholder="Filter results by company"
-            onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-            onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
-        </div>
-        <button onClick={scrape} disabled={loading} className="w-full rounded-lg transition-colors" style={{
-          padding: '10px', background: loading ? '#64748b' : '#0f172a', color: 'white',
-          fontSize: '0.85rem', fontWeight: 500, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+        <button onClick={scrape} disabled={loading} className="w-full rounded-xl transition-all duration-200" style={{
+          padding: '12px 16px', background: loading ? '#cbd5e1' : '#1e293b', color: 'white',
+          fontSize: '0.875rem', fontWeight: 500, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+          boxShadow: loading ? 'none' : '0 2px 4px rgba(0, 0, 0, 0.08)',
         }}>
           {loading ? 'Scraping...' : 'Search LinkedIn'}
         </button>
