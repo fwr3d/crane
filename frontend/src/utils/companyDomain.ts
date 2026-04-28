@@ -14,7 +14,7 @@ export async function lookupDomain(company: string): Promise<string | null> {
   }
 }
 
-export async function linkedinJobsUrl(company: string, position: string, savedUrl?: string | null): Promise<string> {
+export async function linkedinJobsUrl(company: string, _position: string, savedUrl?: string | null): Promise<string> {
   if (savedUrl) return savedUrl
   return `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(company)}&origin=JOB_SEARCH_PAGE_KEYWORD_AUTOCOMPLETE`
 }
