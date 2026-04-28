@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Dashboard } from './pages/Dashboard'
 import { Jobs } from './pages/Jobs'
 import { Scrape } from './pages/Scrape'
 import { api } from './api'
@@ -8,20 +9,22 @@ import { StatusDot } from './components/StatusBadge'
 import { STATUS_LIST } from './components/statusTokens'
 import { useAuth } from './context/auth'
 
-type Page = 'jobs' | 'scrape'
+type Page = 'dashboard' | 'jobs' | 'scrape'
 
 const NAV: { id: Page; label: string }[] = [
-  { id: 'jobs',   label: 'Board' },
-  { id: 'scrape', label: 'Find'  },
+  { id: 'dashboard', label: 'Today' },
+  { id: 'jobs',      label: 'Board' },
+  { id: 'scrape',    label: 'Find'  },
 ]
 
 const navIcon: Record<Page, string> = {
-  jobs:   '▦',
-  scrape: '⌕',
+  dashboard: '▤',
+  jobs:      '▦',
+  scrape:    '⌕',
 }
 
 export default function App() {
-  const [page,  setPage]  = useState<Page>('jobs')
+  const [page,  setPage]  = useState<Page>('dashboard')
   const [stats, setStats] = useState<Stats | null>(null)
   const { profile, signOut } = useAuth()
   const name = profile?.name?.trim() || 'You'
@@ -30,21 +33,17 @@ export default function App() {
   useEffect(() => { api.stats().then(setStats) }, [page])
 
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)' }}>
+    <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', display: 'flex', height: '100vh', overflow: 'hidden' }}>
 
       {/* Sidebar */}
-      <aside className="shrink-0 flex flex-col min-h-screen" style={{ width: 220, background: 'var(--ink-900)', color: 'white', padding: '20px 14px' }}>
+      <aside style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto', background: 'var(--ink-900)', color: 'white', padding: '20px 14px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '26px 6px 34px' }}>
           <img src={craneLogo} alt="Crane" style={{ width: 86, height: 84, marginBottom: 18 }} />
-          <div style={{
-            fontFamily: "'Syne', sans-serif",
-            fontSize: 24,
-            fontWeight: 800,
-            letterSpacing: '0.18em',
-            lineHeight: 1,
-            textTransform: 'uppercase',
-          }}>
+          <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 24, fontWeight: 800, letterSpacing: '0.18em', lineHeight: 1, textTransform: 'uppercase' }}>
             Crane
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#334155', letterSpacing: '0.12em', marginTop: 6 }}>
+            v1.0
           </div>
         </div>
 
@@ -84,6 +83,11 @@ export default function App() {
             >
               <span style={{ width: 16, opacity: page === n.id ? 1 : 0.7, textAlign: 'center' }}>{navIcon[n.id]}</span>
               <span style={{ flex: 1 }}>{n.label}</span>
+              {n.id === 'dashboard' && stats && stats.stale > 0 && (
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: 'white', background: 'rgba(194, 113, 12, 0.5)', padding: '1px 7px', borderRadius: 999 }}>
+                  {stats.stale}
+                </span>
+              )}
               {n.id === 'jobs' && stats && (
                 <span style={{ fontSize: 10.5, fontWeight: 600, color: page === n.id ? 'white' : '#64748b' }}>
                   {stats.total}
@@ -166,9 +170,10 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1" style={{ minWidth: 0, padding: '36px 48px 60px' }}>
-        {page === 'jobs'   && <Jobs goScrape={() => setPage('scrape')} />}
-        {page === 'scrape' && <Scrape />}
+      <main style={{ flex: 1, minWidth: 0, height: '100vh', overflowY: 'auto', padding: '36px 48px 60px' }}>
+        {page === 'dashboard' && <Dashboard goJobs={() => setPage('jobs')} />}
+        {page === 'jobs'      && <Jobs goScrape={() => setPage('scrape')} />}
+        {page === 'scrape'    && <Scrape />}
       </main>
     </div>
   )
