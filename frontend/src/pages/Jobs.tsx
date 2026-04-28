@@ -437,11 +437,18 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
             <div>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 5 }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }}>Job URL</label>
-                {(editFields.url || linkedinUrls.get(selectedJob.id)) && (
-                  <a href={editFields.url || linkedinUrls.get(selectedJob.id)} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--applied)', textDecoration: 'none' }}>
-                    Open ↗
-                  </a>
-                )}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {editFields.url && (
+                    <a href={editFields.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--applied)', textDecoration: 'none' }}>
+                      Open ↗
+                    </a>
+                  )}
+                  {!editFields.url && linkedinUrls.get(selectedJob.id) && (
+                    <a href={linkedinUrls.get(selectedJob.id)} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#94a3b8', textDecoration: 'none' }}>
+                      Search LinkedIn ↗
+                    </a>
+                  )}
+                </div>
               </div>
               <input type="url" placeholder="https://..." value={editFields.url ?? ''} onChange={e => setEditFields(f => ({ ...f, url: e.target.value }))} style={fieldStyle} />
             </div>
