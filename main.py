@@ -1,16 +1,38 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import select, insert, update, delete
 import uuid, csv, io, json, os
+import jwt as pyjwt
 from datetime import datetime
 
 from database import engine, jobs_table, init_db
 
 STATUSES = ["Not Applied", "Applied", "Interview", "Offer", "Rejected"]
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+
+bearer = HTTPBearer(auto_error=False)
+
+
+def get_user_id(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
+    if not creds:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not SUPABASE_JWT_SECRET:
+        raise HTTPException(status_code=500, detail="Server auth is not configured")
+    try:
+        payload = pyjwt.decode(
+            creds.credentials,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        return payload["sub"]
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 def normalize_status(s: str) -> str:
@@ -88,9 +110,16 @@ class BulkUpdate(BaseModel):
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/jobs")
-def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
+def list_jobs(
+    search: str = "",
+    status: str = "",
+    sort: str = "date_desc",
+    user_id: str = Depends(get_user_id),
+):
     with engine.connect() as conn:
-        rows = conn.execute(select(jobs_table)).fetchall()
+        rows = conn.execute(
+            select(jobs_table).where(jobs_table.c.user_id == user_id)
+        ).fetchall()
 
     jobs = [row_to_dict(r) for r in rows]
 
@@ -116,9 +145,11 @@ def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
 
 
 @app.get("/api/stats")
-def stats():
+def stats(user_id: str = Depends(get_user_id)):
     with engine.connect() as conn:
-        rows = conn.execute(select(jobs_table)).fetchall()
+        rows = conn.execute(
+            select(jobs_table).where(jobs_table.c.user_id == user_id)
+        ).fetchall()
 
     jobs = [row_to_dict(r) for r in rows]
     counts = {s: 0 for s in STATUSES}
@@ -131,7 +162,6 @@ def stats():
     responded = counts["Applied"] + counts["Interview"] + counts["Offer"] + counts["Rejected"]
     active    = counts["Applied"] + counts["Interview"] + counts["Offer"]
 
-    # Follow-up alerts: Applied/Interview with no update in 14+ days
     today = datetime.now().date()
     stale = 0
     for job in jobs:
@@ -153,20 +183,21 @@ def stats():
 
 
 @app.delete("/api/jobs", status_code=204)
-def clear_jobs():
+def clear_jobs(user_id: str = Depends(get_user_id)):
     with engine.connect() as conn:
-        conn.execute(delete(jobs_table))
+        conn.execute(delete(jobs_table).where(jobs_table.c.user_id == user_id))
         conn.commit()
 
 
 @app.post("/api/jobs", status_code=201)
-def add_job(body: JobCreate):
+def add_job(body: JobCreate, user_id: str = Depends(get_user_id)):
     company  = body.company.strip()
     position = body.position.strip()
 
-    # Deduplication check
     with engine.connect() as conn:
-        existing = conn.execute(select(jobs_table)).fetchall()
+        existing = conn.execute(
+            select(jobs_table).where(jobs_table.c.user_id == user_id)
+        ).fetchall()
     for row in existing:
         r = row_to_dict(row)
         if r["company"].lower() == company.lower() and r["position"].lower() == position.lower():
@@ -183,6 +214,7 @@ def add_job(body: JobCreate):
         "url":          body.url,
         "notes":        body.notes,
         "deadline":     body.deadline,
+        "user_id":      user_id,
     }
     with engine.connect() as conn:
         conn.execute(insert(jobs_table).values(**job))
@@ -192,29 +224,44 @@ def add_job(body: JobCreate):
 
 # Bulk must come before /{job_id} so "bulk" isn't matched as an ID
 @app.patch("/api/jobs/bulk")
-def bulk_update(body: BulkUpdate):
+def bulk_update(body: BulkUpdate, user_id: str = Depends(get_user_id)):
     now = datetime.now().strftime("%Y-%m-%d")
     with engine.connect() as conn:
         for job_id in body.ids:
             values: dict = {"status": body.status}
             if body.status == "Applied":
-                row = conn.execute(select(jobs_table).where(jobs_table.c.id == job_id)).fetchone()
+                row = conn.execute(
+                    select(jobs_table).where(
+                        jobs_table.c.id == job_id,
+                        jobs_table.c.user_id == user_id,
+                    )
+                ).fetchone()
                 if row and not row_to_dict(row).get("date_applied"):
                     values["date_applied"] = now
-            conn.execute(update(jobs_table).where(jobs_table.c.id == job_id).values(**values))
+            conn.execute(
+                update(jobs_table).where(
+                    jobs_table.c.id == job_id,
+                    jobs_table.c.user_id == user_id,
+                ).values(**values)
+            )
         conn.commit()
     return {"updated": len(body.ids)}
 
 
 @app.patch("/api/jobs/{job_id}")
-def update_job(job_id: str, body: JobUpdate):
+def update_job(job_id: str, body: JobUpdate, user_id: str = Depends(get_user_id)):
     values: dict = {}
 
     if body.status is not None:
         values["status"] = body.status
         if body.status == "Applied":
             with engine.connect() as conn:
-                row = conn.execute(select(jobs_table).where(jobs_table.c.id == job_id)).fetchone()
+                row = conn.execute(
+                    select(jobs_table).where(
+                        jobs_table.c.id == job_id,
+                        jobs_table.c.user_id == user_id,
+                    )
+                ).fetchone()
             if row and not row_to_dict(row).get("date_applied"):
                 values["date_applied"] = datetime.now().strftime("%Y-%m-%d")
 
@@ -226,7 +273,12 @@ def update_job(job_id: str, body: JobUpdate):
         raise HTTPException(status_code=400, detail="Nothing to update")
 
     with engine.connect() as conn:
-        result = conn.execute(update(jobs_table).where(jobs_table.c.id == job_id).values(**values))
+        result = conn.execute(
+            update(jobs_table).where(
+                jobs_table.c.id == job_id,
+                jobs_table.c.user_id == user_id,
+            ).values(**values)
+        )
         conn.commit()
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -236,9 +288,14 @@ def update_job(job_id: str, body: JobUpdate):
 
 
 @app.delete("/api/jobs/{job_id}", status_code=204)
-def delete_job(job_id: str):
+def delete_job(job_id: str, user_id: str = Depends(get_user_id)):
     with engine.connect() as conn:
-        result = conn.execute(delete(jobs_table).where(jobs_table.c.id == job_id))
+        result = conn.execute(
+            delete(jobs_table).where(
+                jobs_table.c.id == job_id,
+                jobs_table.c.user_id == user_id,
+            )
+        )
         conn.commit()
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -299,9 +356,11 @@ def scrape_stream(
 
 
 @app.get("/api/export")
-def export_csv():
+def export_csv(user_id: str = Depends(get_user_id)):
     with engine.connect() as conn:
-        rows = conn.execute(select(jobs_table)).fetchall()
+        rows = conn.execute(
+            select(jobs_table).where(jobs_table.c.user_id == user_id)
+        ).fetchall()
 
     jobs = [row_to_dict(r) for r in rows]
     output = io.StringIO()

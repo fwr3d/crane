@@ -70,6 +70,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  async function resendConfirmation(email: string) {
+    const { error } = await supabase.auth.resend({ type: 'signup', email })
+    return { error: error as Error | null }
+  }
+
   async function saveProfile(data: Partial<Profile>) {
     const { data: authData } = user ? { data: { user } } : await supabase.auth.getUser()
     const currentUser = authData.user
@@ -98,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signOut, saveProfile }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signOut, saveProfile, resendConfirmation }}>
       {children}
     </AuthContext.Provider>
   )

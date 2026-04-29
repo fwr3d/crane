@@ -1,7 +1,13 @@
 import type { Job, Stats, Status } from './types'
+import { supabase } from './lib/supabase'
 
 const API_ORIGIN = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8002' : '')
 const BASE = `${API_ORIGIN}/api`
+
+const authHeader = async (): Promise<Record<string, string>> => {
+  const { data: { session } } = await supabase.auth.getSession()
+  return session ? { Authorization: `Bearer ${session.access_token}` } : {}
+}
 
 export type ScrapeFilters = {
   jobTypes?: string[]
@@ -28,43 +34,54 @@ const scrapeQuery = (search: string, location: string, filters?: ScrapeFilters) 
 
 export const api = {
   jobs: {
-    list: (params?: { search?: string; status?: string; sort?: string }): Promise<Job[]> => {
+    list: async (params?: { search?: string; status?: string; sort?: string }): Promise<Job[]> => {
       const q = new URLSearchParams()
       if (params?.search) q.set('search', params.search)
       if (params?.status) q.set('status', params.status)
       if (params?.sort)   q.set('sort',   params.sort)
-      return fetch(`${BASE}/jobs?${q}`).then(r => r.json())
+      const h = await authHeader()
+      return fetch(`${BASE}/jobs?${q}`, { headers: h }).then(r => r.json())
     },
-    create: (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
-      fetch(`${BASE}/jobs`, {
+    create: async (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> => {
+      const h = await authHeader()
+      return fetch(`${BASE}/jobs`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...h },
         body: JSON.stringify(body),
-      }).then(r => r.json()),
-    update: (id: string, fields: { status?: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
-      fetch(`${BASE}/jobs/${id}`, {
+      }).then(r => r.json())
+    },
+    update: async (id: string, fields: { status?: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> => {
+      const h = await authHeader()
+      return fetch(`${BASE}/jobs/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...h },
         body: JSON.stringify(fields),
-      }).then(r => r.json()),
-    bulkUpdate: (ids: string[], status: Status): Promise<{ updated: number }> =>
-      fetch(`${BASE}/jobs/bulk`, {
+      }).then(r => r.json())
+    },
+    bulkUpdate: async (ids: string[], status: Status): Promise<{ updated: number }> => {
+      const h = await authHeader()
+      return fetch(`${BASE}/jobs/bulk`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...h },
         body: JSON.stringify({ ids, status }),
-      }).then(r => r.json()),
-    delete: (id: string): Promise<void> =>
-      fetch(`${BASE}/jobs/${id}`, { method: 'DELETE' }).then(() => undefined),
-    clear: (): Promise<void> =>
-      fetch(`${BASE}/jobs`, { method: 'DELETE' }).then(() => undefined),
+      }).then(r => r.json())
+    },
+    delete: async (id: string): Promise<void> => {
+      const h = await authHeader()
+      return fetch(`${BASE}/jobs/${id}`, { method: 'DELETE', headers: h }).then(() => undefined)
+    },
+    clear: async (): Promise<void> => {
+      const h = await authHeader()
+      return fetch(`${BASE}/jobs`, { method: 'DELETE', headers: h }).then(() => undefined)
+    },
   },
-  stats: (): Promise<Stats> => fetch(`${BASE}/stats`).then(r => r.json()),
+  stats: async (): Promise<Stats> => {
+    const h = await authHeader()
+    return fetch(`${BASE}/stats`, { headers: h }).then(r => r.json())
+  },
   scrape: (search: string, location: string, filters?: ScrapeFilters): Promise<Job[]> => {
     const q = scrapeQuery(search, location, filters)
-
-    return fetch(`${BASE}/scrape?${q}`, {
-      method: 'POST',
-    }).then(r => r.json())
+    return fetch(`${BASE}/scrape?${q}`, { method: 'POST' }).then(r => r.json())
   },
   scrapeStream: async (
     search: string,

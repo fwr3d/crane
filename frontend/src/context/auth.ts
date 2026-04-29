@@ -17,6 +17,7 @@ export type AuthContextType = {
   signIn: (email: string, password: string) => Promise<{ error: Error | null; hasSession: boolean }>
   signOut: () => Promise<void>
   saveProfile: (data: Partial<Profile>) => Promise<void>
+  resendConfirmation: (email: string) => Promise<{ error: Error | null }>
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null)

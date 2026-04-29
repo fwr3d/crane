@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/auth'
 import { supabase } from '../lib/supabase'
+import { api } from '../api'
 import craneLogo from '../assets/crane.svg'
 
-type Step = 'welcome' | 'account' | 'profile' | 'first-job' | 'done' | 'forgot' | 'reset'
+type Step = 'welcome' | 'account' | 'verify' | 'profile' | 'first-job' | 'done' | 'forgot' | 'reset'
 
 const HEADING: React.CSSProperties = { fontFamily: "'Syne', sans-serif" }
 const BODY:    React.CSSProperties = { fontFamily: "'Figtree', system-ui, sans-serif" }
@@ -77,7 +78,7 @@ function focusOut(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) {
 }
 
 export function Onboarding() {
-  const { user, profile, loading, signUp, signIn, saveProfile } = useAuth()
+  const { user, profile, loading, signUp, signIn, saveProfile, resendConfirmation } = useAuth()
   const navigate = useNavigate()
 
   const [step, setStep]       = useState<Step>('welcome')
@@ -93,6 +94,7 @@ export function Onboarding() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError]     = useState('')
+  const [notice, setNotice]   = useState('')
   const [busy, setBusy]       = useState(false)
 
   useEffect(() => {
@@ -133,19 +135,39 @@ export function Onboarding() {
 
   const handleAccount = async () => {
     setError('')
+    setNotice('')
     setBusy(true)
     const { error, hasSession } = await (mode === 'signup' ? signUp : signIn)(email, password)
     setBusy(false)
-    if (error) { setError(error.message); return }
+    if (error) {
+      if (error.message.toLowerCase().includes('email not confirmed')) {
+        setStep('verify')
+        return
+      }
+      setError(error.message)
+      return
+    }
     if (!hasSession) {
-      setMode('signin')
-      setError(mode === 'signup'
-        ? 'Account created. Check your email to confirm it, then sign in here.'
-        : 'Signed in, but no active session was returned. Please try again.')
+      if (mode === 'signup') {
+        setStep('verify')
+        return
+      }
+      setError('Signed in, but no active session was returned. Please try again.')
       return
     }
     if (mode === 'signin') { navigate('/app', { replace: true }); return }
     setStep('profile')
+  }
+
+  const handleResendConfirmation = async () => {
+    if (!email) { setError('Enter your email first.'); return }
+    setError('')
+    setNotice('')
+    setBusy(true)
+    const { error } = await resendConfirmation(email)
+    setBusy(false)
+    if (error) { setError(error.message); return }
+    setNotice('Confirmation email sent. Open the link on this device, then come back here.')
   }
 
   const handleProfile = async () => {
@@ -166,11 +188,7 @@ export function Onboarding() {
     setBusy(true)
     try {
       if (!skip && company && position) {
-        const { data: { user: u } } = await supabase.auth.getUser()
-        if (!u) throw new Error('Please sign in before adding your first job.')
-
-        const { error } = await supabase.from('jobs').insert({ company, position, status, user_id: u.id })
-        if (error) throw error
+        await api.jobs.create({ company, position, status: status as import('../types').Status })
       }
       setStep('done')
     } catch (err) {
@@ -184,7 +202,7 @@ export function Onboarding() {
 
   const currentStep: Step = user && !profile?.name && (step === 'welcome' || step === 'account') ? 'profile' : step
   const dots: Step[] = ['account', 'profile', 'first-job']
-  const showHeader = !['welcome', 'done', 'forgot', 'reset'].includes(currentStep)
+  const showHeader = !['welcome', 'done', 'forgot', 'reset', 'verify'].includes(currentStep)
   const dotIdx = dots.indexOf(currentStep)
 
   return (
@@ -302,6 +320,36 @@ export function Onboarding() {
                 <span style={{ color: '#334155' }}>Forgot password?</span>
               </GhostBtn>
             )}
+          </div>
+        )}
+
+        {/* ── Verify email ── */}
+        {currentStep === 'verify' && (
+          <div style={{ width: '100%', maxWidth: '400px', textAlign: 'center' }}>
+            <img src={craneLogo} alt="" style={{ width: '72px', height: 'auto', marginBottom: '1.5rem' }} />
+            <h2 style={{ ...HEADING, fontSize: '1.7rem', fontWeight: 700, letterSpacing: '-0.02em', margin: '0 0 0.5rem' }}>
+              Check your email
+            </h2>
+            <p style={{ fontSize: '0.9rem', color: '#64748b', margin: '0 0 1.5rem', lineHeight: 1.6 }}>
+              We sent a confirmation link to{' '}
+              <span style={{ color: '#cbd5e1' }}>{email || 'your email'}</span>.
+              Open it to activate your account, then come back here.
+            </p>
+            {notice && (
+              <p style={{ fontSize: '0.8rem', color: '#4ade80', margin: '0 0 0.75rem', lineHeight: 1.5 }}>{notice}</p>
+            )}
+            {error && (
+              <p style={{ fontSize: '0.8rem', color: '#f87171', margin: '0 0 0.75rem', lineHeight: 1.5 }}>{error}</p>
+            )}
+            <PrimaryBtn onClick={handleResendConfirmation} disabled={busy || !email}>
+              {busy ? 'Sending…' : 'Resend confirmation'}
+            </PrimaryBtn>
+            <GhostBtn onClick={() => { setStep('account'); setMode('signin'); setError(''); setNotice('') }}>
+              <span style={{ color: '#64748b' }}>I confirmed it — sign in</span>
+            </GhostBtn>
+            <GhostBtn onClick={() => { setStep('account'); setMode('signup'); setError(''); setNotice('') }}>
+              <span style={{ color: '#334155' }}>Use a different email</span>
+            </GhostBtn>
           </div>
         )}
 
