@@ -113,6 +113,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
   const load = () => {
     api.jobs.list()
       .then(setJobs)
+      .catch(() => setJobs([]))
       .finally(() => setLoading(false))
   }
 

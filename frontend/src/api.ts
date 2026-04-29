@@ -9,6 +9,14 @@ const authHeader = async (): Promise<Record<string, string>> => {
   return session ? { Authorization: `Bearer ${session.access_token}` } : {}
 }
 
+const safeJson = async <T,>(r: Response): Promise<T> => {
+  if (!r.ok) {
+    const msg = await r.json().then((d: { detail?: string }) => d?.detail).catch(() => null)
+    throw new Error(msg ?? `Request failed (${r.status})`)
+  }
+  return r.json() as Promise<T>
+}
+
 export type ScrapeFilters = {
   jobTypes?: string[]
   experienceLevels?: string[]
@@ -40,7 +48,7 @@ export const api = {
       if (params?.status) q.set('status', params.status)
       if (params?.sort)   q.set('sort',   params.sort)
       const h = await authHeader()
-      return fetch(`${BASE}/jobs?${q}`, { headers: h }).then(r => r.json())
+      return fetch(`${BASE}/jobs?${q}`, { headers: h }).then(r => safeJson<Job[]>(r))
     },
     create: async (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> => {
       const h = await authHeader()
@@ -77,7 +85,7 @@ export const api = {
   },
   stats: async (): Promise<Stats> => {
     const h = await authHeader()
-    return fetch(`${BASE}/stats`, { headers: h }).then(r => r.json())
+    return fetch(`${BASE}/stats`, { headers: h }).then(r => safeJson<Stats>(r))
   },
   scrape: (search: string, location: string, filters?: ScrapeFilters): Promise<Job[]> => {
     const q = scrapeQuery(search, location, filters)

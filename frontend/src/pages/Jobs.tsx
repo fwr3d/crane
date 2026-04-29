@@ -51,10 +51,9 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
   const addCompanyRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(() =>
-    api.jobs.list().then(data => {
-      setJobs(data)
-      setLoading(false)
-    }),
+    api.jobs.list()
+      .then(data => { setJobs(data); setLoading(false) })
+      .catch(() => { setJobs([]); setLoading(false) }),
   [])
 
   useEffect(() => { load() }, [load])
