@@ -7,32 +7,66 @@ from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import select, insert, update, delete
 import uuid, csv, io, json, os
-import jwt as pyjwt
+import requests as http_requests
+from jose import jwt as jose_jwt
+from jose.exceptions import JWTError
 from datetime import datetime
 
 from database import engine, jobs_table, init_db
 
 STATUSES = ["Not Applied", "Applied", "Interview", "Offer", "Rejected"]
-SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+SUPABASE_URL        = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")  # legacy HS256 fallback
 
 bearer = HTTPBearer(auto_error=False)
+_jwks: list = []
+
+
+def _load_jwks() -> None:
+    global _jwks
+    if not SUPABASE_URL:
+        return
+    try:
+        resp = http_requests.get(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", timeout=5)
+        _jwks = resp.json().get("keys", [])
+    except Exception:
+        _jwks = []
 
 
 def get_user_id(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
     if not creds:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    if not SUPABASE_JWT_SECRET:
-        raise HTTPException(status_code=500, detail="Server auth is not configured")
+    token = creds.credentials
+
+    # Inspect token header to pick the right verification path
     try:
-        payload = pyjwt.decode(
-            creds.credentials,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False},
-        )
-        return payload["sub"]
-    except Exception:
+        header = jose_jwt.get_unverified_header(token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    alg = header.get("alg", "HS256")
+    kid = header.get("kid")
+
+    # Asymmetric key (ECC / RSA) — verify against JWKS
+    if alg in ("ES256", "RS256"):
+        key = next((k for k in _jwks if k.get("kid") == kid), _jwks[0] if _jwks else None)
+        if key:
+            try:
+                payload = jose_jwt.decode(token, key, algorithms=[alg], options={"verify_aud": False})
+                return payload["sub"]
+            except JWTError:
+                pass
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # Symmetric key (HS256) — legacy fallback
+    if SUPABASE_JWT_SECRET:
+        try:
+            payload = jose_jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+            return payload["sub"]
+        except JWTError:
+            pass
+
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 def normalize_status(s: str) -> str:
@@ -69,6 +103,7 @@ def migrate_json():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _load_jwks()
     init_db()
     migrate_json()
     yield
