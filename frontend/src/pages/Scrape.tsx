@@ -64,6 +64,7 @@ export function Scrape() {
   const [loading,  setLoading]  = useState(false)
   const [adding,   setAdding]   = useState(false)
   const [done,     setDone]     = useState(false)
+  const [addError, setAddError] = useState('')
   const scrapeAbortRef = useRef<AbortController | null>(null)
 
   const companies = useMemo(() => {
@@ -198,7 +199,8 @@ export function Scrape() {
   const addSelected = async () => {
     if (!results) return
     setAdding(true)
-    await Promise.allSettled(
+    setAddError('')
+    const outcomes = await Promise.allSettled(
       [...selected].map(i => api.jobs.create({
         company:  results[i].company,
         position: results[i].position,
@@ -206,8 +208,17 @@ export function Scrape() {
       }))
     )
     setAdding(false)
-    setDone(true)
-    setResults(null)
+    const failed = outcomes.filter(o => o.status === 'rejected').length
+    const succeeded = outcomes.length - failed
+    if (succeeded === 0) {
+      setAddError(failed === 1
+        ? 'Job could not be saved. Try signing out and back in.'
+        : `None of the ${failed} jobs could be saved. Try signing out and back in.`)
+    } else {
+      if (failed > 0) setAddError(`${failed} job${failed > 1 ? 's' : ''} failed to save.`)
+      setDone(true)
+      setResults(null)
+    }
   }
 
   const clearResultFilters = () => {
@@ -369,6 +380,7 @@ export function Scrape() {
       )}
 
       {done && <p style={{ fontSize: '0.85rem', color: '#10b981', fontWeight: 500 }}>Jobs added successfully.</p>}
+      {addError && <p style={{ fontSize: '0.85rem', color: '#ef4444', fontWeight: 500 }}>{addError}</p>}
 
       {results !== null && (
         <div className="space-y-3">
