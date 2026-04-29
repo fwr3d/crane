@@ -30,7 +30,7 @@ export default function App() {
   const name = profile?.name?.trim() || 'You'
   const initials = name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase()
 
-  useEffect(() => { api.stats().then(setStats) }, [page])
+  useEffect(() => { api.stats().then(setStats).catch(() => {}) }, [page])
 
   return (
     <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', display: 'flex', height: '100vh', overflow: 'hidden' }}>
