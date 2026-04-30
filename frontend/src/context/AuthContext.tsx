@@ -40,19 +40,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false)
   }, [profileFromUser])
 
-  const applySession = useCallback(async (nextSession: Session | null) => {
+  const applySession = useCallback(async (nextSession: Session | null): Promise<Error | null> => {
     if (!nextSession) {
       setSession(null)
       setUser(null)
       setProfile(null)
       setLoading(false)
-      return
+      return null
     }
 
     const { data, error } = await supabase.auth.getUser()
     if (error || !data.user) {
       await clearLocalAuth()
-      return
+      return error ?? new Error('Could not verify your Supabase session.')
     }
 
     const response = await fetch(AUTH_VALIDATE_URL, {
@@ -60,12 +60,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => null)
     if (!response?.ok) {
       await clearLocalAuth()
-      return
+      const detail = response
+        ? `Auth validation failed (${response.status}). Check VITE_API_URL on Vercel and Supabase env vars on the backend.`
+        : 'Auth validation could not reach the backend. Check VITE_API_URL on Vercel.'
+      return new Error(detail)
     }
 
     setSession(nextSession)
     setUser(data.user)
     await fetchProfile(data.user)
+    return null
   }, [clearLocalAuth, fetchProfile])
 
   useEffect(() => {
@@ -106,9 +110,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signUp(email: string, password: string) {
     const { data, error } = await supabase.auth.signUp({ email, password })
     if (data.session) {
-      setSession(data.session)
-      setUser(data.session.user)
-      await fetchProfile(data.session.user)
+      const validationError = await applySession(data.session)
+      if (validationError) return { error: validationError, hasSession: false }
     }
     return { error: error as Error | null, hasSession: Boolean(data.session) }
   }
@@ -116,9 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signIn(email: string, password: string) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (data.session) {
-      setSession(data.session)
-      setUser(data.session.user)
-      await fetchProfile(data.session.user)
+      const validationError = await applySession(data.session)
+      if (validationError) return { error: validationError, hasSession: false }
     }
     return { error: error as Error | null, hasSession: Boolean(data.session) }
   }
