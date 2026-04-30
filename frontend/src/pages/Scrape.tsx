@@ -205,6 +205,8 @@ export function Scrape() {
         company:  results[i].company,
         position: results[i].position,
         status:   'Not Applied',
+        url:      results[i].url,
+        location: results[i].location,
       }))
     )
     setAdding(false)

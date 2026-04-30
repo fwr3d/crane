@@ -50,7 +50,7 @@ export const api = {
       const h = await authHeader()
       return fetch(`${BASE}/jobs?${q}`, { headers: h }).then(r => safeJson<Job[]>(r))
     },
-    create: async (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> => {
+    create: async (body: { company: string; position: string; status: Status; url?: string; location?: string; notes?: string; deadline?: string }): Promise<Job> => {
       const h = await authHeader()
       return fetch(`${BASE}/jobs`, {
         method: 'POST',
@@ -58,7 +58,7 @@ export const api = {
         body: JSON.stringify(body),
       }).then(r => r.json())
     },
-    update: async (id: string, fields: { status?: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> => {
+    update: async (id: string, fields: { status?: Status; url?: string; location?: string; notes?: string; deadline?: string }): Promise<Job> => {
       const h = await authHeader()
       return fetch(`${BASE}/jobs/${id}`, {
         method: 'PATCH',

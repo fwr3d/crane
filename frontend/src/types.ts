@@ -8,6 +8,7 @@ export interface Job {
   date_added?: string
   date_applied?: string
   url?: string
+  location?: string
   notes?: string
   deadline?: string
 }
