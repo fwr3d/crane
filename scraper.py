@@ -35,6 +35,16 @@ DATE_POSTED_CODES = {
     "past-month": "r2592000",
 }
 
+COMMON_LINKEDIN_LOCATIONS = {
+    "new york": ("New York, New York, United States", "102571732"),
+    "new york city": ("New York, New York, United States", "102571732"),
+    "nyc": ("New York, New York, United States", "102571732"),
+    "new york, ny": ("New York, New York, United States", "102571732"),
+    "san jose": ("San Jose, California, United States", "106233382"),
+    "san jose, ca": ("San Jose, California, United States", "106233382"),
+    "california": ("California, United States", "102095887"),
+}
+
 STATE_ALIASES = {
     "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca",
     "colorado": "co", "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga",
@@ -53,6 +63,41 @@ STATE_ALIASES = {
 def _csv_codes(values, mapping):
     codes = [mapping[v] for v in values or [] if v in mapping]
     return ",".join(codes) if codes else None
+
+
+def _clean_location_key(location):
+    return re.sub(r"\s+", " ", location.strip().lower())
+
+
+def _resolve_linkedin_location(location, headers):
+    key = _clean_location_key(location)
+    if key in COMMON_LINKEDIN_LOCATIONS:
+        return COMMON_LINKEDIN_LOCATIONS[key]
+
+    queries = [location]
+    if "united states" not in key and not re.search(r"\b[a-z]{2}\b", key):
+        queries.append(f"{location} United States")
+
+    for query in queries:
+        try:
+            response = requests.get(
+                "https://www.linkedin.com/jobs-guest/api/typeaheadHits",
+                params={"query": query, "typeaheadType": "GEO"},
+                headers=headers,
+                timeout=10,
+            )
+            if response.status_code != 200:
+                continue
+            hits = response.json()
+        except (requests.RequestException, ValueError):
+            continue
+
+        geo_hits = [hit for hit in hits if hit.get("type") == "GEO" and hit.get("id") and hit.get("displayName")]
+        if geo_hits:
+            first = geo_hits[0]
+            return first["displayName"], first["id"]
+
+    return location, None
 
 
 def _location_tokens(value):
@@ -83,6 +128,11 @@ def _requested_location_parts(location):
     return aliases
 
 
+def _is_state_only_location(location):
+    key = _clean_location_key(location).replace(" state", "")
+    return key in STATE_ALIASES and key != "new york"
+
+
 def _matches_requested_location(job_location, requested_location, workplace_types=None):
     if not job_location:
         return True
@@ -95,9 +145,10 @@ def _matches_requested_location(job_location, requested_location, workplace_type
     if "remote" in (workplace_types or []) and "remote" in normalized_job:
         return True
 
+    basic_job_tokens = set(_location_tokens(job_location))
     for alias in aliases:
-        alias_tokens = _normalize_location(alias)
-        if alias_tokens and alias_tokens.issubset(normalized_job):
+        alias_tokens = set(_location_tokens(alias))
+        if alias_tokens and alias_tokens.issubset(basic_job_tokens):
             return True
 
     requested_tokens = _normalize_location(requested_location)
@@ -106,7 +157,7 @@ def _matches_requested_location(job_location, requested_location, workplace_type
         state for state, abbr in STATE_ALIASES.items()
         if abbr in requested_states or state in requested_location.lower()
     }
-    if requested_state_names:
+    if requested_state_names and _is_state_only_location(requested_location):
         state_tokens = set()
         for state in requested_state_names:
             state_tokens.update(state.split())
@@ -161,19 +212,22 @@ def scrape_linkedin_job_pages(
     """
     Yield LinkedIn jobs one result page at a time.
     """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    linkedin_location, geo_id = _resolve_linkedin_location(location, headers)
     params = _search_params(
         search_term,
-        location,
+        linkedin_location,
         job_types=job_types,
         experience_levels=experience_levels,
         workplace_types=workplace_types,
         date_posted=date_posted,
         easy_apply=easy_apply,
     )
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
+    if geo_id:
+        params["geoId"] = geo_id
     seen = set()
     max_pages = max(1, int(max_pages or 100))
 
