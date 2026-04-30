@@ -237,12 +237,14 @@ def add_job(body: JobCreate, _current_user: dict = Depends(require_auth)):
     for row in existing:
         r = row_to_dict(row)
         same_url = bool(url and r.get("url") and r["url"].strip().lower() == url.lower())
-        same_listing = (
-            r["company"].lower() == company.lower()
-            and r["position"].lower() == position.lower()
-            and (r.get("location") or "").strip().lower() == (location or "").lower()
+        same_company_position = r["company"].lower() == company.lower() and r["position"].lower() == position.lower()
+        existing_location = (r.get("location") or "").strip().lower()
+        requested_location = (location or "").lower()
+        same_location = bool(existing_location and requested_location and existing_location == requested_location)
+        same_manual_listing = not url and same_company_position and (
+            same_location or not existing_location or not requested_location
         )
-        if same_url or same_listing:
+        if same_url or same_manual_listing:
             raise HTTPException(status_code=409, detail="Job already exists")
 
     now = datetime.now().strftime("%Y-%m-%d")
