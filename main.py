@@ -17,6 +17,7 @@ from database import engine, jobs_table, init_db
 STATUSES = ["Not Applied", "Applied", "Interview", "Offer", "Rejected"]
 SUPABASE_URL        = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")  # legacy HS256 fallback
+SUPABASE_JWK        = os.environ.get("SUPABASE_JWK", "")         # fallback if network fetch fails
 
 bearer = HTTPBearer(auto_error=False)
 _jwks: list = []
@@ -24,13 +25,22 @@ _jwks: list = []
 
 def _load_jwks() -> None:
     global _jwks
-    if not SUPABASE_URL:
-        return
-    try:
-        resp = http_requests.get(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", timeout=5)
-        _jwks = resp.json().get("keys", [])
-    except Exception:
-        _jwks = []
+    # Try fetching from Supabase JWKS endpoint
+    if SUPABASE_URL:
+        try:
+            resp = http_requests.get(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", timeout=5)
+            keys = resp.json().get("keys", [])
+            if keys:
+                _jwks = keys
+                return
+        except Exception:
+            pass
+    # Fall back to a manually supplied JWK (JSON string of a single key)
+    if SUPABASE_JWK:
+        try:
+            _jwks = [json.loads(SUPABASE_JWK)]
+        except Exception:
+            pass
 
 
 def get_user_id(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
