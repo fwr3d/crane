@@ -1,16 +1,20 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import select, insert, update, delete
-import uuid, csv, io, json, os
+import uuid, csv, io, json, os, requests
 from datetime import datetime
 
 from database import engine, jobs_table, init_db
 
 STATUSES = ["Not Applied", "Applied", "Interview", "Offer", "Rejected"]
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("VITE_SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 
 def normalize_status(s: str) -> str:
@@ -22,6 +26,55 @@ def normalize_status(s: str) -> str:
 
 def row_to_dict(row) -> dict:
     return dict(row._mapping)
+
+
+def validate_auth_token(authorization: str | None) -> dict:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing auth token")
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(status_code=500, detail="Supabase auth is not configured")
+
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        response = requests.get(
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/user",
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=5,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=503, detail="Could not validate auth token")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+    user = response.json()
+
+    # Access tokens are JWTs, so an already-issued token can briefly outlive an
+    # admin deletion. A service-role lookup lets deployed apps reject deleted
+    # accounts immediately instead of waiting for token expiry.
+    if SUPABASE_SERVICE_ROLE_KEY and user.get("id"):
+        try:
+            admin_response = requests.get(
+                f"{SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user['id']}",
+                headers={
+                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                },
+                timeout=5,
+            )
+        except requests.RequestException:
+            raise HTTPException(status_code=503, detail="Could not verify auth user")
+
+        if admin_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Auth user no longer exists")
+
+    return user
+
+
+def require_auth(authorization: str | None = Header(default=None)) -> dict:
+    return validate_auth_token(authorization)
 
 
 def migrate_json():
@@ -87,8 +140,18 @@ class BulkUpdate(BaseModel):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@app.get("/api/auth/validate")
+def validate_session(current_user: dict = Depends(require_auth)):
+    return {"id": current_user.get("id")}
+
+
 @app.get("/api/jobs")
-def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
+def list_jobs(
+    search: str = "",
+    status: str = "",
+    sort: str = "date_desc",
+    _current_user: dict = Depends(require_auth),
+):
     with engine.connect() as conn:
         rows = conn.execute(select(jobs_table)).fetchall()
 
@@ -116,7 +179,7 @@ def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
 
 
 @app.get("/api/stats")
-def stats():
+def stats(_current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         rows = conn.execute(select(jobs_table)).fetchall()
 
@@ -153,14 +216,14 @@ def stats():
 
 
 @app.delete("/api/jobs", status_code=204)
-def clear_jobs():
+def clear_jobs(_current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         conn.execute(delete(jobs_table))
         conn.commit()
 
 
 @app.post("/api/jobs", status_code=201)
-def add_job(body: JobCreate):
+def add_job(body: JobCreate, _current_user: dict = Depends(require_auth)):
     company  = body.company.strip()
     position = body.position.strip()
 
@@ -192,7 +255,7 @@ def add_job(body: JobCreate):
 
 # Bulk must come before /{job_id} so "bulk" isn't matched as an ID
 @app.patch("/api/jobs/bulk")
-def bulk_update(body: BulkUpdate):
+def bulk_update(body: BulkUpdate, _current_user: dict = Depends(require_auth)):
     now = datetime.now().strftime("%Y-%m-%d")
     with engine.connect() as conn:
         for job_id in body.ids:
@@ -207,7 +270,7 @@ def bulk_update(body: BulkUpdate):
 
 
 @app.patch("/api/jobs/{job_id}")
-def update_job(job_id: str, body: JobUpdate):
+def update_job(job_id: str, body: JobUpdate, _current_user: dict = Depends(require_auth)):
     values: dict = {}
 
     if body.status is not None:
@@ -236,7 +299,7 @@ def update_job(job_id: str, body: JobUpdate):
 
 
 @app.delete("/api/jobs/{job_id}", status_code=204)
-def delete_job(job_id: str):
+def delete_job(job_id: str, _current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         result = conn.execute(delete(jobs_table).where(jobs_table.c.id == job_id))
         conn.commit()
@@ -253,6 +316,7 @@ def scrape(
     workplace: Optional[list[str]] = Query(None),
     date_posted: str | None = None,
     easy_apply: bool = False,
+    _current_user: dict = Depends(require_auth),
 ):
     from scraper import scrape_linkedin_jobs
     return scrape_linkedin_jobs(
@@ -275,6 +339,7 @@ def scrape_stream(
     workplace: Optional[list[str]] = Query(None),
     date_posted: str | None = None,
     easy_apply: bool = False,
+    _current_user: dict = Depends(require_auth),
 ):
     from scraper import scrape_linkedin_job_pages
 
@@ -299,7 +364,7 @@ def scrape_stream(
 
 
 @app.get("/api/export")
-def export_csv():
+def export_csv(_current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         rows = conn.execute(select(jobs_table)).fetchall()
 

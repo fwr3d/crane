@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
+import { clearPersistedSupabaseSession, supabase } from '../lib/supabase'
 import { AuthContext } from './auth'
 import type { Profile } from './auth'
+
+const API_ORIGIN = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8002' : '')
+const AUTH_VALIDATE_URL = `${API_ORIGIN}/api/auth/validate`
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user,    setUser]    = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const clearLocalAuth = useCallback(async () => {
+    setSession(null)
+    setUser(null)
+    setProfile(null)
+    setLoading(false)
+    clearPersistedSupabaseSession()
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
+  }, [])
 
   const profileFromUser = useCallback((currentUser: User): Profile | null => {
     const meta = currentUser.user_metadata
@@ -28,23 +40,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false)
   }, [profileFromUser])
 
+  const applySession = useCallback(async (nextSession: Session | null) => {
+    if (!nextSession) {
+      setSession(null)
+      setUser(null)
+      setProfile(null)
+      setLoading(false)
+      return
+    }
+
+    const { data, error } = await supabase.auth.getUser()
+    if (error || !data.user) {
+      await clearLocalAuth()
+      return
+    }
+
+    const response = await fetch(AUTH_VALIDATE_URL, {
+      headers: { Authorization: `Bearer ${nextSession.access_token}` },
+    }).catch(() => null)
+    if (!response?.ok) {
+      await clearLocalAuth()
+      return
+    }
+
+    setSession(nextSession)
+    setUser(data.user)
+    await fetchProfile(data.user)
+  }, [clearLocalAuth, fetchProfile])
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user)
-      else setLoading(false)
-    })
+    clearPersistedSupabaseSession()
+    setLoading(false)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user)
-      else { setProfile(null); setLoading(false) }
+      applySession(session)
     })
 
     return () => subscription.unsubscribe()
-  }, [fetchProfile])
+  }, [applySession])
+
+  useEffect(() => {
+    const validateCurrentSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) await applySession(session)
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') validateCurrentSession()
+    }
+    const handleAuthInvalid = () => { clearLocalAuth() }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', validateCurrentSession)
+    window.addEventListener('crane:auth-invalid', handleAuthInvalid)
+    const interval = window.setInterval(validateCurrentSession, 60000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', validateCurrentSession)
+      window.removeEventListener('crane:auth-invalid', handleAuthInvalid)
+      window.clearInterval(interval)
+    }
+  }, [applySession, clearLocalAuth])
 
   async function signUp(email: string, password: string) {
     const { data, error } = await supabase.auth.signUp({ email, password })
@@ -67,7 +124,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
-    await supabase.auth.signOut()
+    await supabase.auth.signOut().catch(() => undefined)
+    await clearLocalAuth()
   }
 
   async function saveProfile(data: Partial<Profile>) {

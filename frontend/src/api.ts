@@ -1,4 +1,5 @@
 import type { Job, Stats, Status } from './types'
+import { supabase } from './lib/supabase'
 
 const API_ORIGIN = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8002' : '')
 const BASE = `${API_ORIGIN}/api`
@@ -26,6 +27,31 @@ const scrapeQuery = (search: string, location: string, filters?: ScrapeFilters) 
   return q
 }
 
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const headers = new Headers(init.headers)
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (session?.access_token) {
+    headers.set('Authorization', `Bearer ${session.access_token}`)
+  }
+
+  const response = await fetch(input, { ...init, headers })
+
+  if (response.status === 401) {
+    window.dispatchEvent(new Event('crane:auth-invalid'))
+    throw new Error('Your session has expired. Please sign in again.')
+  }
+
+  return response
+}
+
+async function jsonResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`)
+  }
+  return response.json() as Promise<T>
+}
+
 export const api = {
   jobs: {
     list: (params?: { search?: string; status?: string; sort?: string }): Promise<Job[]> => {
@@ -33,38 +59,38 @@ export const api = {
       if (params?.search) q.set('search', params.search)
       if (params?.status) q.set('status', params.status)
       if (params?.sort)   q.set('sort',   params.sort)
-      return fetch(`${BASE}/jobs?${q}`).then(r => r.json())
+      return apiFetch(`${BASE}/jobs?${q}`).then(jsonResponse<Job[]>)
     },
     create: (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
-      fetch(`${BASE}/jobs`, {
+      apiFetch(`${BASE}/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      }).then(r => r.json()),
+      }).then(jsonResponse<Job>),
     update: (id: string, fields: { status?: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
-      fetch(`${BASE}/jobs/${id}`, {
+      apiFetch(`${BASE}/jobs/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fields),
-      }).then(r => r.json()),
+      }).then(jsonResponse<Job>),
     bulkUpdate: (ids: string[], status: Status): Promise<{ updated: number }> =>
-      fetch(`${BASE}/jobs/bulk`, {
+      apiFetch(`${BASE}/jobs/bulk`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, status }),
-      }).then(r => r.json()),
+      }).then(jsonResponse<{ updated: number }>),
     delete: (id: string): Promise<void> =>
-      fetch(`${BASE}/jobs/${id}`, { method: 'DELETE' }).then(() => undefined),
+      apiFetch(`${BASE}/jobs/${id}`, { method: 'DELETE' }).then(() => undefined),
     clear: (): Promise<void> =>
-      fetch(`${BASE}/jobs`, { method: 'DELETE' }).then(() => undefined),
+      apiFetch(`${BASE}/jobs`, { method: 'DELETE' }).then(() => undefined),
   },
-  stats: (): Promise<Stats> => fetch(`${BASE}/stats`).then(r => r.json()),
+  stats: (): Promise<Stats> => apiFetch(`${BASE}/stats`).then(jsonResponse<Stats>),
   scrape: (search: string, location: string, filters?: ScrapeFilters): Promise<Job[]> => {
     const q = scrapeQuery(search, location, filters)
 
-    return fetch(`${BASE}/scrape?${q}`, {
+    return apiFetch(`${BASE}/scrape?${q}`, {
       method: 'POST',
-    }).then(r => r.json())
+    }).then(jsonResponse<Job[]>)
   },
   scrapeStream: async (
     search: string,
@@ -74,7 +100,7 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<void> => {
     const q = scrapeQuery(search, location, filters)
-    const response = await fetch(`${BASE}/scrape/stream?${q}`, {
+    const response = await apiFetch(`${BASE}/scrape/stream?${q}`, {
       method: 'POST',
       signal,
     })
@@ -100,6 +126,17 @@ export const api = {
     }
 
     if (buffer.trim()) onEvent(JSON.parse(buffer) as ScrapeEvent)
+  },
+  exportCsv: async (): Promise<void> => {
+    const response = await apiFetch(`${BASE}/export`)
+    if (!response.ok) throw new Error(`Export failed: ${response.status}`)
+
+    const blob = await response.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'crane-jobs.csv'
+    a.click()
+    URL.revokeObjectURL(a.href)
   },
   exportUrl: `${BASE}/export`,
 }
