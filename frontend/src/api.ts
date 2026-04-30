@@ -61,13 +61,13 @@ export const api = {
       if (params?.sort)   q.set('sort',   params.sort)
       return apiFetch(`${BASE}/jobs?${q}`).then(jsonResponse<Job[]>)
     },
-    create: (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
+    create: (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string; location?: string }): Promise<Job> =>
       apiFetch(`${BASE}/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }).then(jsonResponse<Job>),
-    update: (id: string, fields: { status?: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> =>
+    update: (id: string, fields: { status?: Status; url?: string; notes?: string; deadline?: string; location?: string }): Promise<Job> =>
       apiFetch(`${BASE}/jobs/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

@@ -126,12 +126,14 @@ class JobCreate(BaseModel):
     url:      Optional[str] = None
     notes:    Optional[str] = None
     deadline: Optional[str] = None
+    location: Optional[str] = None
 
 class JobUpdate(BaseModel):
     status:   Optional[str] = None
     url:      Optional[str] = None
     notes:    Optional[str] = None
     deadline: Optional[str] = None
+    location: Optional[str] = None
 
 class BulkUpdate(BaseModel):
     ids:    list[str]
@@ -226,13 +228,21 @@ def clear_jobs(_current_user: dict = Depends(require_auth)):
 def add_job(body: JobCreate, _current_user: dict = Depends(require_auth)):
     company  = body.company.strip()
     position = body.position.strip()
+    url = body.url.strip() if body.url else None
+    location = body.location.strip() if body.location else None
 
     # Deduplication check
     with engine.connect() as conn:
         existing = conn.execute(select(jobs_table)).fetchall()
     for row in existing:
         r = row_to_dict(row)
-        if r["company"].lower() == company.lower() and r["position"].lower() == position.lower():
+        same_url = bool(url and r.get("url") and r["url"].strip().lower() == url.lower())
+        same_listing = (
+            r["company"].lower() == company.lower()
+            and r["position"].lower() == position.lower()
+            and (r.get("location") or "").strip().lower() == (location or "").lower()
+        )
+        if same_url or same_listing:
             raise HTTPException(status_code=409, detail="Job already exists")
 
     now = datetime.now().strftime("%Y-%m-%d")
@@ -243,9 +253,10 @@ def add_job(body: JobCreate, _current_user: dict = Depends(require_auth)):
         "status":       body.status,
         "date_added":   now,
         "date_applied": now if body.status == "Applied" else None,
-        "url":          body.url,
+        "url":          url,
         "notes":        body.notes,
         "deadline":     body.deadline,
+        "location":     location,
     }
     with engine.connect() as conn:
         conn.execute(insert(jobs_table).values(**job))
@@ -284,6 +295,7 @@ def update_job(job_id: str, body: JobUpdate, _current_user: dict = Depends(requi
     if body.url      is not None: values["url"]      = body.url
     if body.notes    is not None: values["notes"]    = body.notes
     if body.deadline is not None: values["deadline"] = body.deadline
+    if body.location is not None: values["location"] = body.location
 
     if not values:
         raise HTTPException(status_code=400, detail="Nothing to update")
@@ -372,7 +384,7 @@ def export_csv(_current_user: dict = Depends(require_auth)):
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
-        fieldnames=["company", "position", "status", "date_added", "date_applied", "url", "deadline", "notes"],
+        fieldnames=["company", "position", "status", "date_added", "date_applied", "location", "url", "deadline", "notes"],
         extrasaction="ignore",
     )
     writer.writeheader()
