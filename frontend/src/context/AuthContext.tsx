@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
-import { clearPersistedSupabaseSession, supabase } from '../lib/supabase'
+import { clearRememberedSupabaseSession, supabase } from '../lib/supabase'
 import { AuthContext } from './auth'
 import type { Profile } from './auth'
 
@@ -18,7 +18,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null)
     setProfile(null)
     setLoading(false)
-    clearPersistedSupabaseSession()
+    clearRememberedSupabaseSession()
     await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
   }, [])
 
@@ -73,8 +73,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [clearLocalAuth, fetchProfile])
 
   useEffect(() => {
-    clearPersistedSupabaseSession()
-    setLoading(false)
+    clearRememberedSupabaseSession()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      applySession(session)
+    })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       applySession(session)

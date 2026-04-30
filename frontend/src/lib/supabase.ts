@@ -6,15 +6,16 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const projectRef = new URL(url).hostname.split('.')[0]
 const authStorageKey = `sb-${projectRef}-auth-token`
 
-export function clearPersistedSupabaseSession() {
+export function clearRememberedSupabaseSession() {
   localStorage.removeItem(authStorageKey)
 }
 
-clearPersistedSupabaseSession()
+clearRememberedSupabaseSession()
 
 export const supabase = createClient(url, key, {
   auth: {
-    persistSession: false,
+    storage: sessionStorage,
+    persistSession: true,
     autoRefreshToken: true,
   },
 })
