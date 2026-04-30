@@ -2,6 +2,7 @@ import requests
 import time
 from bs4 import BeautifulSoup
 from urllib.parse import urlencode
+import re
 
 JOB_TYPE_CODES = {
     "full-time": "F",
@@ -34,10 +35,86 @@ DATE_POSTED_CODES = {
     "past-month": "r2592000",
 }
 
+STATE_ALIASES = {
+    "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca",
+    "colorado": "co", "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga",
+    "hawaii": "hi", "idaho": "id", "illinois": "il", "indiana": "in", "iowa": "ia",
+    "kansas": "ks", "kentucky": "ky", "louisiana": "la", "maine": "me", "maryland": "md",
+    "massachusetts": "ma", "michigan": "mi", "minnesota": "mn", "mississippi": "ms",
+    "missouri": "mo", "montana": "mt", "nebraska": "ne", "nevada": "nv", "new hampshire": "nh",
+    "new jersey": "nj", "new mexico": "nm", "new york": "ny", "north carolina": "nc",
+    "north dakota": "nd", "ohio": "oh", "oklahoma": "ok", "oregon": "or", "pennsylvania": "pa",
+    "rhode island": "ri", "south carolina": "sc", "south dakota": "sd", "tennessee": "tn",
+    "texas": "tx", "utah": "ut", "vermont": "vt", "virginia": "va", "washington": "wa",
+    "west virginia": "wv", "wisconsin": "wi", "wyoming": "wy",
+}
+
 
 def _csv_codes(values, mapping):
     codes = [mapping[v] for v in values or [] if v in mapping]
     return ",".join(codes) if codes else None
+
+
+def _location_tokens(value):
+    return [token for token in re.split(r"[^a-z0-9]+", value.lower()) if token]
+
+
+def _normalize_location(value):
+    tokens = _location_tokens(value)
+    expanded = []
+    for token in tokens:
+        expanded.append(token)
+        for state, abbr in STATE_ALIASES.items():
+            if token == abbr:
+                expanded.extend(state.split())
+    return set(expanded)
+
+
+def _requested_location_parts(location):
+    parts = [part.strip().lower() for part in re.split(r"[,/|]", location) if part.strip()]
+    if not parts:
+        return []
+
+    aliases = [parts[0]]
+    if parts[0] == "nyc":
+        aliases.extend(["new york", "new york city"])
+    if parts[0] == "new york":
+        aliases.extend(["new york city", "nyc"])
+    return aliases
+
+
+def _matches_requested_location(job_location, requested_location, workplace_types=None):
+    if not job_location:
+        return True
+
+    normalized_job = _normalize_location(job_location)
+    aliases = _requested_location_parts(requested_location)
+    if not aliases:
+        return True
+
+    if "remote" in (workplace_types or []) and "remote" in normalized_job:
+        return True
+
+    for alias in aliases:
+        alias_tokens = _normalize_location(alias)
+        if alias_tokens and alias_tokens.issubset(normalized_job):
+            return True
+
+    requested_tokens = _normalize_location(requested_location)
+    requested_states = requested_tokens.intersection(set(STATE_ALIASES.values()))
+    requested_state_names = {
+        state for state, abbr in STATE_ALIASES.items()
+        if abbr in requested_states or state in requested_location.lower()
+    }
+    if requested_state_names:
+        state_tokens = set()
+        for state in requested_state_names:
+            state_tokens.update(state.split())
+            state_tokens.add(STATE_ALIASES[state])
+        if normalized_job.intersection(state_tokens):
+            return True
+
+    return False
 
 
 def _search_params(
@@ -143,6 +220,11 @@ def scrape_linkedin_job_pages(
             else:
                 company = "Unknown"
 
+            location_tag = card.find('span', class_='job-search-card__location')
+            job_location = location_tag.text.strip() if location_tag else None
+            if not _matches_requested_location(job_location, location, workplace_types):
+                continue
+
             parent = card.find_parent('div', class_='base-card') or card.find_parent('li')
             link_tag = parent.find('a', class_='base-card__full-link') if parent else None
             job_url = link_tag.get('href').strip() if link_tag and link_tag.get('href') else None
@@ -157,6 +239,7 @@ def scrape_linkedin_job_pages(
                 'position': position,
                 'status': 'Not Applied',
                 'url': job_url,
+                'location': job_location,
             })
 
         if page_jobs:

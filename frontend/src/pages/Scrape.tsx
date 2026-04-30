@@ -459,7 +459,7 @@ export function Scrape() {
                     {job.position}
                   </p>
                   <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '1px 0 0' }} className="truncate">
-                    {job.company}
+                    {job.company}{job.location ? ` - ${job.location}` : ''}
                   </p>
                 </div>
               </label>

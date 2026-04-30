@@ -10,6 +10,7 @@ export interface Job {
   url?: string
   notes?: string
   deadline?: string
+  location?: string
 }
 
 export interface Stats {
