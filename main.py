@@ -160,7 +160,19 @@ class BulkUpdate(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "jwks_keys": len(_jwks)}
+    jwk_parse_err = None
+    if SUPABASE_JWK and not _jwks:
+        try:
+            json.loads(SUPABASE_JWK)
+        except Exception as e:
+            jwk_parse_err = str(e)
+    return {
+        "status": "ok",
+        "jwks_keys": len(_jwks),
+        "supabase_url_set": bool(SUPABASE_URL),
+        "supabase_jwk_len": len(SUPABASE_JWK),
+        "supabase_jwk_parse_error": jwk_parse_err,
+    }
 
 
 @app.get("/api/jobs")
