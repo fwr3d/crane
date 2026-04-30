@@ -151,12 +151,14 @@ class JobCreate(BaseModel):
     position: str
     status:   str = "Not Applied"
     url:      Optional[str] = None
+    location: Optional[str] = None
     notes:    Optional[str] = None
     deadline: Optional[str] = None
 
 class JobUpdate(BaseModel):
     status:   Optional[str] = None
     url:      Optional[str] = None
+    location: Optional[str] = None
     notes:    Optional[str] = None
     deadline: Optional[str] = None
 
@@ -268,6 +270,8 @@ def clear_jobs(user_id: str = Depends(get_user_id)):
 def add_job(body: JobCreate, user_id: str = Depends(get_user_id)):
     company  = body.company.strip()
     position = body.position.strip()
+    url = body.url.strip() if body.url else None
+    location = body.location.strip() if body.location else None
 
     with engine.connect() as conn:
         existing = conn.execute(
@@ -275,7 +279,20 @@ def add_job(body: JobCreate, user_id: str = Depends(get_user_id)):
         ).fetchall()
     for row in existing:
         r = row_to_dict(row)
-        if r["company"].lower() == company.lower() and r["position"].lower() == position.lower():
+        same_url = bool(url and r.get("url") and r["url"].strip().lower() == url.lower())
+        same_company_position = (
+            r["company"].lower() == company.lower()
+            and r["position"].lower() == position.lower()
+        )
+        existing_location = (r.get("location") or "").strip().lower()
+        requested_location = (location or "").lower()
+        same_location = bool(
+            existing_location and requested_location and existing_location == requested_location
+        )
+        same_manual_listing = not url and same_company_position and (
+            same_location or not existing_location or not requested_location
+        )
+        if same_url or same_manual_listing:
             raise HTTPException(status_code=409, detail="Job already exists")
 
     now = datetime.now().strftime("%Y-%m-%d")
@@ -286,7 +303,8 @@ def add_job(body: JobCreate, user_id: str = Depends(get_user_id)):
         "status":       body.status,
         "date_added":   now,
         "date_applied": now if body.status == "Applied" else None,
-        "url":          body.url,
+        "url":          url,
+        "location":     location,
         "notes":        body.notes,
         "deadline":     body.deadline,
         "user_id":      user_id,
@@ -341,6 +359,7 @@ def update_job(job_id: str, body: JobUpdate, user_id: str = Depends(get_user_id)
                 values["date_applied"] = datetime.now().strftime("%Y-%m-%d")
 
     if body.url      is not None: values["url"]      = body.url
+    if body.location is not None: values["location"] = body.location
     if body.notes    is not None: values["notes"]    = body.notes
     if body.deadline is not None: values["deadline"] = body.deadline
 
@@ -441,7 +460,17 @@ def export_csv(user_id: str = Depends(get_user_id)):
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
-        fieldnames=["company", "position", "status", "date_added", "date_applied", "url", "deadline", "notes"],
+        fieldnames=[
+            "company",
+            "position",
+            "status",
+            "date_added",
+            "date_applied",
+            "location",
+            "url",
+            "deadline",
+            "notes",
+        ],
         extrasaction="ignore",
     )
     writer.writeheader()

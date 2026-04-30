@@ -20,6 +20,7 @@ jobs_table = Table(
     Column("date_applied", String),
     Column("notes",        String),
     Column("url",          String),
+    Column("location",     String),
     Column("deadline",     String),
     Column("user_id",      String),
 )
@@ -33,7 +34,13 @@ def init_db():
 def _migrate_columns():
     """Add new columns to an existing table without losing data."""
     is_postgres = "postgresql" in str(engine.url)
-    new_cols = [("notes", "TEXT"), ("url", "TEXT"), ("deadline", "TEXT"), ("user_id", "TEXT")]
+    new_cols = [
+        ("notes", "TEXT"),
+        ("url", "TEXT"),
+        ("location", "TEXT"),
+        ("deadline", "TEXT"),
+        ("user_id", "TEXT"),
+    ]
 
     with engine.connect() as conn:
         for col, col_type in new_cols:
