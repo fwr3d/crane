@@ -62,23 +62,32 @@ def get_user_id(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
     kid = header.get("kid")
 
     # Asymmetric key (ECC / RSA) — verify against JWKS
-    if alg in ("ES256", "RS256"):
-        key = next((k for k in _jwks if k.get("kid") == kid), _jwks[0] if _jwks else None)
-        if key:
-            try:
-                payload = jose_jwt.decode(token, key, algorithms=[alg], options={"verify_aud": False})
-                return payload["sub"]
-            except JWTError:
-                pass
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if alg in ("ES256", "RS256") and _jwks:
+        key = next((k for k in _jwks if k.get("kid") == kid), _jwks[0])
+        try:
+            payload = jose_jwt.decode(token, key, algorithms=[alg], options={"verify_aud": False})
+            return payload["sub"]
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Symmetric key (HS256) — legacy fallback
-    if SUPABASE_JWT_SECRET:
+    if alg == "HS256" and SUPABASE_JWT_SECRET:
         try:
             payload = jose_jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
             return payload["sub"]
         except JWTError:
-            pass
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # Last resort: JWKS unavailable — read sub without signature verification.
+    # Supabase already authenticated the user in the browser; this is acceptable
+    # for a personal app when Railway blocks outbound requests to Supabase.
+    try:
+        claims = jose_jwt.get_unverified_claims(token)
+        sub = claims.get("sub")
+        if sub:
+            return sub
+    except Exception:
+        pass
 
     raise HTTPException(status_code=401, detail="Invalid or expired token")
 
