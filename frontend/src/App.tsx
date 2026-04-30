@@ -139,13 +139,14 @@ export default function App() {
               <div style={{ fontSize: 10.5, color: '#475569' }}>{profile?.target_role || 'Job search'}</div>
             </div>
           </div>
-          <a
-            href={api.exportUrl}
-            style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', marginBottom: 8 }}
-            className="hover:text-slate-400 transition-colors"
+          <button
+            onClick={() => api.exportCsv()}
+            style={{ fontSize: '0.72rem', color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'block', marginBottom: 8 }}
+            onMouseEnter={e => (e.target as HTMLElement).style.color = '#94a3b8'}
+            onMouseLeave={e => (e.target as HTMLElement).style.color = '#64748b'}
           >
             Export CSV
-          </a>
+          </button>
           <button
             onClick={() => {
               if (window.confirm('Clear all jobs? This cannot be undone.')) {
