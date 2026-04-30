@@ -4,9 +4,6 @@ import { clearRememberedSupabaseSession, supabase } from '../lib/supabase'
 import { AuthContext } from './auth'
 import type { Profile } from './auth'
 
-const API_ORIGIN = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8002' : '')
-const AUTH_VALIDATE_URL = `${API_ORIGIN}/api/auth/validate`
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user,    setUser]    = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
@@ -53,17 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error || !data.user) {
       await clearLocalAuth()
       return error ?? new Error('Could not verify your Supabase session.')
-    }
-
-    const response = await fetch(AUTH_VALIDATE_URL, {
-      headers: { Authorization: `Bearer ${nextSession.access_token}` },
-    }).catch(() => null)
-    if (!response?.ok) {
-      await clearLocalAuth()
-      const detail = response
-        ? `Auth validation failed (${response.status}). Check VITE_API_URL on Vercel and Supabase env vars on the backend.`
-        : 'Auth validation could not reach the backend. Check VITE_API_URL on Vercel.'
-      return new Error(detail)
     }
 
     setSession(nextSession)
