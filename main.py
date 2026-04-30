@@ -38,6 +38,10 @@ def get_user_id(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = creds.credentials
 
+    # Reload JWKS if the startup fetch failed (e.g. network not ready yet)
+    if not _jwks:
+        _load_jwks()
+
     # Inspect token header to pick the right verification path
     try:
         header = jose_jwt.get_unverified_header(token)
@@ -143,6 +147,11 @@ class BulkUpdate(BaseModel):
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "jwks_keys": len(_jwks)}
+
 
 @app.get("/api/jobs")
 def list_jobs(
