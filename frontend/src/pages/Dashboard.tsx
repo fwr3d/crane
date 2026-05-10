@@ -175,7 +175,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
     return (
       <div className="fadeUp" style={{ maxWidth: 1080 }}>
         <div className="animate-pulse" style={{ display: 'grid', gap: 24 }}>
-          <div style={{ height: 78, width: 360, background: 'var(--ink-100)', borderRadius: 12 }} />
+          <div style={{ height: 78, maxWidth: 360, background: 'var(--ink-100)', borderRadius: 12 }} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
             {[0, 1, 2, 3].map(i => <div key={i} style={{ height: 126, background: 'var(--ink-100)', borderRadius: 14 }} />)}
           </div>

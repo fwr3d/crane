@@ -119,7 +119,7 @@ export default function App() {
 
   if (isMobile) {
     return (
-      <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', color: 'var(--ink-800)', minHeight: '100dvh', overflowX: 'hidden' }}>
+      <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', color: 'var(--ink-800)', minHeight: '100dvh' }}>
         {/* Page content */}
         <main style={{ padding: '20px 16px 90px', minHeight: '100dvh', boxSizing: 'border-box' }}>
           {page === 'dashboard' && <Dashboard goJobs={() => setPage('jobs')} />}

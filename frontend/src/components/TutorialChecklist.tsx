@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { TutorialStep, TutorialStepId } from '../hooks/useTutorial'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 interface Props {
   steps: TutorialStep[]
@@ -11,14 +12,15 @@ interface Props {
 export function TutorialChecklist({ steps, onSpotlight, onDismiss }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const done = steps.filter(s => s.done).length
+  const isMobile = useIsMobile()
 
   return createPortal(
     <div style={{
       position: 'fixed',
-      right: 24,
-      bottom: 24,
+      right: isMobile ? 12 : 24,
+      bottom: isMobile ? 'calc(env(safe-area-inset-bottom) + 68px)' : 24,
       zIndex: 80,
-      width: 'min(340px, calc(100vw - 32px))',
+      width: 'min(340px, calc(100vw - 24px))',
     }}>
       <div style={{
         background: 'var(--card)',
