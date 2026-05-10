@@ -23,6 +23,13 @@ jobs_table = Table(
     Column("location",     String),
     Column("deadline",     String),
     Column("user_id",      String),
+    Column("salary",       String),
+    Column("job_type",     String),
+    Column("tags",         String),
+    Column("source",       String),
+    Column("job_id",       String),
+    Column("logo_url",        String),
+    Column("applicant_count", String),
 )
 
 
@@ -40,6 +47,13 @@ def _migrate_columns():
         ("location", "TEXT"),
         ("deadline", "TEXT"),
         ("user_id", "TEXT"),
+        ("salary", "TEXT"),
+        ("job_type", "TEXT"),
+        ("tags", "TEXT"),
+        ("source", "TEXT"),
+        ("job_id", "TEXT"),
+        ("logo_url", "TEXT"),
+        ("applicant_count", "INTEGER"),
     ]
 
     with engine.connect() as conn:

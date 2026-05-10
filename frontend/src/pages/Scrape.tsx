@@ -5,7 +5,7 @@ import type { Job } from '../types'
 import { CompanyLogo } from '../components/CompanyLogo'
 
 type ResultView = 'all' | 'selected' | 'unselected'
-type ResultSort = 'original' | 'company' | 'role'
+type ResultSort = 'original' | 'company' | 'role' | 'applicants'
 
 const JOB_TYPE_OPTIONS = [
   { value: 'full-time', label: 'Full-time' },
@@ -31,23 +31,24 @@ const WORKPLACE_OPTIONS = [
   { value: 'hybrid', label: 'Hybrid' },
 ]
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 10
+const LINKEDIN_PAGES_PER_FETCH = 1
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px',
+  width: '100%', border: '1px solid var(--ink-150)', borderRadius: '8px',
   padding: '10px 12px', fontSize: '0.875rem', outline: 'none',
-  color: '#0f172a', background: 'white', boxSizing: 'border-box',
+  color: 'var(--ink-800)', background: 'var(--control)', boxSizing: 'border-box',
 }
 
 const labelStyle: React.CSSProperties = {
-  display: 'block', fontSize: '0.68rem', fontWeight: 500, color: '#94a3b8',
+  display: 'block', fontSize: '0.68rem', fontWeight: 500, color: 'var(--ink-400)',
   letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px',
 }
 
 export function Scrape() {
   const [search,   setSearch]   = useState('Software Engineer')
   const [location, setLocation] = useState('California')
-  const [jobTypes, setJobTypes] = useState<Set<string>>(new Set(['full-time']))
+  const [jobTypes, setJobTypes] = useState<Set<string>>(new Set())
   const [experienceLevels, setExperienceLevels] = useState<Set<string>>(new Set())
   const [workplaceTypes, setWorkplaceTypes] = useState<Set<string>>(new Set())
   const [datePosted, setDatePosted] = useState('')
@@ -60,11 +61,12 @@ export function Scrape() {
   const [resultSort, setResultSort] = useState<ResultSort>('original')
   const [resultPage, setResultPage] = useState(1)
   const [scrapedPages, setScrapedPages] = useState(0)
+  const [nextLinkedInPage, setNextLinkedInPage] = useState(1)
+  const [hasMoreScrapeResults, setHasMoreScrapeResults] = useState(false)
   const [scrapeMessage, setScrapeMessage] = useState('')
   const [loading,  setLoading]  = useState(false)
   const [adding,   setAdding]   = useState(false)
   const [done,     setDone]     = useState(false)
-  const [addError, setAddError] = useState('')
   const scrapeAbortRef = useRef<AbortController | null>(null)
 
   const companies = useMemo(() => {
@@ -91,12 +93,17 @@ export function Scrape() {
 
     if (resultSort === 'company') entries.sort((a, b) => a.job.company.localeCompare(b.job.company))
     if (resultSort === 'role') entries.sort((a, b) => a.job.position.localeCompare(b.job.position))
+    if (resultSort === 'applicants') entries.sort((a, b) => (a.job.applicant_count ?? Infinity) - (b.job.applicant_count ?? Infinity))
+
 
     return entries
   }, [results, resultQuery, companyFilter, resultView, selected, resultSort])
 
+  const filtersActive = resultQuery.trim() !== '' || companyFilter !== 'all' || resultView !== 'all' || resultSort !== 'original'
   const totalPages = Math.max(1, Math.ceil(visibleResults.length / PAGE_SIZE))
   const currentPage = Math.min(resultPage, totalPages)
+  const canFetchNextScrapePage = Boolean(results && hasMoreScrapeResults && !loading && currentPage === totalPages && !filtersActive)
+  const canGoNextPage = currentPage < totalPages || canFetchNextScrapePage
   const pagedResults = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE
     return visibleResults.slice(start, start + PAGE_SIZE)
@@ -104,7 +111,27 @@ export function Scrape() {
   const pageStart = visibleResults.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
   const pageEnd = Math.min(currentPage * PAGE_SIZE, visibleResults.length)
 
-  const filtersActive = resultQuery.trim() !== '' || companyFilter !== 'all' || resultView !== 'all' || resultSort !== 'original'
+  const scrapeFilters = () => ({
+    jobTypes: [...jobTypes],
+    experienceLevels: [...experienceLevels],
+    workplaceTypes: [...workplaceTypes],
+    datePosted,
+    easyApply,
+  })
+
+  const appendUniqueJobs = (incoming: Job[]) => {
+    setResults(previous => {
+      const existing = new Set((previous ?? []).map(job => job.job_id ?? job.url ?? `${job.company}:${job.position}:${job.location ?? ''}`))
+      const next = [...(previous ?? [])]
+      for (const job of incoming) {
+        const key = job.job_id ?? job.url ?? `${job.company}:${job.position}:${job.location ?? ''}`
+        if (existing.has(key)) continue
+        existing.add(key)
+        next.push(job)
+      }
+      return next
+    })
+  }
 
   const toggleSet = (setter: Dispatch<SetStateAction<Set<string>>>, value: string) => {
     setter(previous => {
@@ -115,47 +142,59 @@ export function Scrape() {
     })
   }
 
-  const scrape = async () => {
+  const fetchScrapePage = async (linkedInPage: number, replace = false, goToResultPage?: number) => {
     scrapeAbortRef.current?.abort()
     const controller = new AbortController()
     scrapeAbortRef.current = controller
 
     setLoading(true)
-    setResults([])
-    setSelected(new Set())
-    setResultQuery('')
-    setCompanyFilter('all')
-    setResultView('all')
-    setResultSort('original')
-    setResultPage(1)
-    setScrapedPages(0)
-    setScrapeMessage('Connecting to LinkedIn...')
-    setDone(false)
+    if (replace) {
+      setResults([])
+      setSelected(new Set())
+      setResultQuery('')
+      setCompanyFilter('all')
+      setResultView('all')
+      setResultSort('original')
+      setResultPage(1)
+      setScrapedPages(0)
+      setNextLinkedInPage(1)
+      setHasMoreScrapeResults(false)
+      setDone(false)
+    }
+    setScrapeMessage(linkedInPage === 1 ? 'Fetching the first LinkedIn page...' : `Fetching LinkedIn page ${linkedInPage}...`)
+
+    let chunkJobs: Job[] = []
+    let chunkTotal = 0
+    let lastPage = linkedInPage - 1
     try {
       await api.scrapeStream(
         search,
         location,
-        {
-          jobTypes: [...jobTypes],
-          experienceLevels: [...experienceLevels],
-          workplaceTypes: [...workplaceTypes],
-          datePosted,
-          easyApply,
-        },
+        scrapeFilters(),
+        { page: linkedInPage, pages: LINKEDIN_PAGES_PER_FETCH },
         event => {
           if (event.type === 'page') {
+            chunkTotal += event.jobs.length
+            lastPage = event.page
             setScrapedPages(event.page)
-            setResults(previous => [...(previous ?? []), ...event.jobs])
-            setScrapeMessage(`Fetched ${event.total} jobs from ${event.page} LinkedIn page${event.page === 1 ? '' : 's'}...`)
+            chunkJobs = [...chunkJobs, ...event.jobs]
+            setScrapeMessage(`Fetched ${chunkTotal} new jobs through LinkedIn page ${event.page}...`)
             return
           }
 
           if (event.type === 'rate_limited') {
             setScrapeMessage(event.message)
+            setHasMoreScrapeResults(false)
             return
           }
 
-          setScrapeMessage(`Finished with ${event.total} scraped jobs.`)
+          setNextLinkedInPage(lastPage + 1)
+          setHasMoreScrapeResults(event.total > 0)
+          if (chunkJobs.length > 0) {
+            appendUniqueJobs(chunkJobs)
+            if (goToResultPage) setResultPage(goToResultPage)
+          }
+          setScrapeMessage(event.total > 0 ? `Fetched LinkedIn page ${lastPage}.` : 'No more LinkedIn jobs found.')
         },
         controller.signal,
       )
@@ -169,6 +208,10 @@ export function Scrape() {
       if (scrapeAbortRef.current === controller) scrapeAbortRef.current = null
       setLoading(false)
     }
+  }
+
+  const scrape = async () => {
+    await fetchScrapePage(1, true)
   }
 
   const stopScrape = () => {
@@ -199,28 +242,23 @@ export function Scrape() {
   const addSelected = async () => {
     if (!results) return
     setAdding(true)
-    setAddError('')
-    const outcomes = await Promise.allSettled(
+    await Promise.allSettled(
       [...selected].map(i => api.jobs.create({
         company:  results[i].company,
         position: results[i].position,
         status:   'Not Applied',
         url:      results[i].url,
         location: results[i].location,
+        source:   results[i].source ?? 'linkedin',
+        job_id:   results[i].job_id,
+        logo_url:        results[i].logo_url,
+        applicant_count: results[i].applicant_count,
+        salary:          results[i].salary,
       }))
     )
     setAdding(false)
-    const failed = outcomes.filter(o => o.status === 'rejected').length
-    const succeeded = outcomes.length - failed
-    if (succeeded === 0) {
-      setAddError(failed === 1
-        ? 'Job could not be saved. Try signing out and back in.'
-        : `None of the ${failed} jobs could be saved. Try signing out and back in.`)
-    } else {
-      if (failed > 0) setAddError(`${failed} job${failed > 1 ? 's' : ''} failed to save.`)
-      setDone(true)
-      setResults(null)
-    }
+    setDone(true)
+    setResults(null)
   }
 
   const clearResultFilters = () => {
@@ -233,23 +271,23 @@ export function Scrape() {
 
   return (
     <div className="space-y-6 fadeUp" style={{ maxWidth: '720px' }}>
-      <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', margin: 0 }}>
+      <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: 'var(--ink-900)', letterSpacing: '-0.02em', margin: 0 }}>
         Scrape LinkedIn
       </h1>
 
-      <div className="bg-white rounded-2xl p-6 space-y-5" style={{ border: '1px solid #e2e8f0', maxWidth: '680px' }}>
+      <div className="bg-white rounded-2xl p-6 space-y-5" style={{ border: '1px solid var(--ink-150)', maxWidth: '680px' }}>
         <div className="flex gap-4">
           <div className="flex-1">
             <label style={labelStyle}>Job title</label>
             <input style={inputStyle} value={search} onChange={e => setSearch(e.target.value)}
               onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
           </div>
           <div className="flex-1">
             <label style={labelStyle}>Location</label>
-            <input style={inputStyle} value={location} onChange={e => setLocation(e.target.value)}
+            <input style={inputStyle} value={location} placeholder="City, town, state, or remote" onChange={e => setLocation(e.target.value)}
               onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
           </div>
         </div>
         <div style={{ display: 'grid', gap: 14 }}>
@@ -264,9 +302,9 @@ export function Scrape() {
                     fontWeight: 600,
                     padding: '5px 10px',
                     borderRadius: 999,
-                    border: selected ? '1px solid var(--ink-900)' : '1px solid var(--ink-150)',
-                    background: selected ? 'var(--ink-900)' : 'white',
-                    color: selected ? 'white' : 'var(--ink-500)',
+                    border: selected ? '1px solid var(--accent-line)' : '1px solid var(--ink-150)',
+                    background: selected ? 'var(--accent-bg)' : 'var(--control)',
+                    color: selected ? 'var(--accent)' : 'var(--ink-500)',
                     cursor: 'pointer',
                   }}>
                     {option.label}
@@ -288,7 +326,7 @@ export function Scrape() {
                     padding: '5px 10px',
                     borderRadius: 999,
                     border: selected ? '1px solid var(--accent-line)' : '1px solid var(--ink-150)',
-                    background: selected ? 'var(--accent-bg)' : 'white',
+                    background: selected ? 'var(--accent-bg)' : 'var(--control)',
                     color: selected ? 'var(--accent)' : 'var(--ink-500)',
                     cursor: 'pointer',
                   }}>
@@ -311,9 +349,9 @@ export function Scrape() {
                       fontWeight: 600,
                       padding: '5px 10px',
                       borderRadius: 999,
-                      border: selected ? '1px solid var(--ink-900)' : '1px solid var(--ink-150)',
-                      background: selected ? 'var(--ink-900)' : 'white',
-                      color: selected ? 'white' : 'var(--ink-500)',
+                      border: selected ? '1px solid var(--accent-line)' : '1px solid var(--ink-150)',
+                      background: selected ? 'var(--accent-bg)' : 'var(--control)',
+                      color: selected ? 'var(--accent)' : 'var(--ink-500)',
                       cursor: 'pointer',
                     }}>
                       {option.label}
@@ -338,7 +376,7 @@ export function Scrape() {
           </div>
         </div>
         <button onClick={scrape} disabled={loading} className="w-full rounded-lg transition-colors" style={{
-          padding: '10px', background: loading ? '#64748b' : '#0f172a', color: 'white',
+          padding: '10px', background: loading ? 'var(--action-muted)' : 'var(--action)', color: 'var(--action-text)',
           fontSize: '0.85rem', fontWeight: 500, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
         }}>
           {loading ? `Searching... ${results?.length ?? 0} found` : 'Search LinkedIn'}
@@ -360,7 +398,7 @@ export function Scrape() {
               <button
                 type="button"
                 onClick={stopScrape}
-                style={{ fontSize: 12, color: 'var(--ink-700)', background: 'white', border: '1px solid var(--ink-150)', borderRadius: 8, padding: '7px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                style={{ fontSize: 12, color: 'var(--ink-700)', background: 'var(--control)', border: '1px solid var(--ink-150)', borderRadius: 8, padding: '7px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
                 Stop
               </button>
@@ -371,7 +409,7 @@ export function Scrape() {
               width: loading ? '62%' : '100%',
               height: '100%',
               borderRadius: 999,
-              background: 'var(--ink-900)',
+              background: 'var(--action)',
               transition: 'width 240ms ease',
             }} />
           </div>
@@ -382,7 +420,6 @@ export function Scrape() {
       )}
 
       {done && <p style={{ fontSize: '0.85rem', color: '#10b981', fontWeight: 500 }}>Jobs added successfully.</p>}
-      {addError && <p style={{ fontSize: '0.85rem', color: '#ef4444', fontWeight: 500 }}>{addError}</p>}
 
       {results !== null && (
         <div className="space-y-3">
@@ -391,7 +428,7 @@ export function Scrape() {
               Showing {pageStart}-{pageEnd} of {visibleResults.length} filtered jobs - {results.length} scraped - {selected.size} selected
             </p>
             <button onClick={toggleAll} style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}
-              onMouseEnter={e => (e.target as HTMLElement).style.color = '#0f172a'}
+              onMouseEnter={e => (e.target as HTMLElement).style.color = 'var(--ink-800)'}
               onMouseLeave={e => (e.target as HTMLElement).style.color = '#94a3b8'}
             >
               {pagedResults.length > 0 && pagedResults.every(entry => selected.has(entry.index)) ? 'Deselect page' : 'Select page'}
@@ -411,7 +448,7 @@ export function Scrape() {
                     setResultPage(1)
                   }}
                   onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-                  onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
+                  onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')}
                 />
               </div>
               <div>
@@ -444,6 +481,8 @@ export function Scrape() {
                   <option value="original">Original</option>
                   <option value="company">Company</option>
                   <option value="role">Role</option>
+                  <option value="applicants">Fewest applicants</option>
+
                 </select>
               </div>
             </div>
@@ -462,56 +501,73 @@ export function Scrape() {
           <div className="space-y-1.5">
             {pagedResults.map(({ job, index }) => (
               <label key={index} className="flex items-center gap-3 bg-white cursor-pointer transition-all" style={{
-                border: selected.has(index) ? '1px solid #94a3b8' : '1px solid #e2e8f0',
+                border: selected.has(index) ? '1px solid var(--ink-300)' : '1px solid var(--ink-150)',
                 borderRadius: '10px', padding: '10px 14px',
               }}>
                 <input type="checkbox" checked={selected.has(index)} onChange={() => toggle(index)}
-                  style={{ accentColor: '#0f172a', width: '14px', height: '14px', flexShrink: 0 }} />
-                <CompanyLogo company={job.company} size={30} />
+                  style={{ accentColor: 'var(--accent)', width: '14px', height: '14px', flexShrink: 0 }} />
+                <CompanyLogo company={job.company} logoUrl={job.logo_url} size={30} />
                 <div className="min-w-0 flex-1">
-                  <p style={{ fontSize: '0.85rem', fontWeight: 500, color: '#0f172a', margin: 0 }} className="truncate">
+                  <p style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--ink-900)', margin: 0 }} className="truncate">
                     {job.position}
                   </p>
                   <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '1px 0 0' }} className="truncate">
                     {job.company}
                   </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 5, fontSize: 10.5, color: 'var(--ink-400)' }}>
+                    <span>{job.source ?? 'linkedin'}</span>
+                    {job.location && <span>{job.location}</span>}
+                    {job.applicant_count != null && <span>{job.applicant_count.toLocaleString()} applicants</span>}
+                    {job.salary && <span style={{ color: 'var(--applied)' }}>{job.salary}</span>}
+                    {job.url && (
+                      <a href={job.url} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()} style={{ color: 'var(--applied)', textDecoration: 'none' }}>
+                        LinkedIn
+                      </a>
+                    )}
+                  </div>
                 </div>
               </label>
             ))}
             {visibleResults.length === 0 && (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--ink-300)', fontSize: 13 }}>
-                No scraped jobs match those filters.
+                {filtersActive ? 'No jobs match those filters.' : 'No jobs found. Try different keywords or location.'}
               </div>
             )}
           </div>
 
-          {visibleResults.length > PAGE_SIZE && (
+          {(visibleResults.length > PAGE_SIZE || hasMoreScrapeResults) && (
             <div className="flex items-center justify-between" style={{ paddingTop: 4 }}>
               <button
                 type="button"
                 disabled={currentPage === 1}
                 onClick={() => setResultPage(page => Math.max(1, page - 1))}
-                style={{ fontSize: 12, color: currentPage === 1 ? 'var(--ink-300)' : 'var(--ink-700)', background: 'white', border: '1px solid var(--ink-150)', borderRadius: 8, padding: '7px 10px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                style={{ fontSize: 12, color: currentPage === 1 ? 'var(--ink-300)' : 'var(--ink-700)', background: 'var(--control)', border: '1px solid var(--ink-150)', borderRadius: 8, padding: '7px 10px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
               >
                 Previous
               </button>
               <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-                Page {currentPage} of {totalPages}
+                Page {currentPage} of {totalPages}{hasMoreScrapeResults && !filtersActive ? '+' : ''}
               </span>
               <button
                 type="button"
-                disabled={currentPage === totalPages}
-                onClick={() => setResultPage(page => Math.min(totalPages, page + 1))}
-                style={{ fontSize: 12, color: currentPage === totalPages ? 'var(--ink-300)' : 'var(--ink-700)', background: 'white', border: '1px solid var(--ink-150)', borderRadius: 8, padding: '7px 10px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                disabled={!canGoNextPage}
+                onClick={() => {
+                  if (currentPage < totalPages) {
+                    setResultPage(page => Math.min(totalPages, page + 1))
+                    return
+                  }
+                  fetchScrapePage(nextLinkedInPage, false, currentPage + 1)
+                }}
+                style={{ fontSize: 12, color: !canGoNextPage ? 'var(--ink-300)' : 'var(--ink-700)', background: 'var(--control)', border: '1px solid var(--ink-150)', borderRadius: 8, padding: '7px 10px', cursor: !canGoNextPage ? 'not-allowed' : 'pointer' }}
               >
-                Next
+                {loading && currentPage === totalPages ? 'Loading...' : 'Next'}
               </button>
             </div>
           )}
 
           {selected.size > 0 && (
             <button onClick={addSelected} disabled={adding} className="w-full rounded-lg transition-colors" style={{
-              padding: '10px', background: adding ? '#64748b' : '#0f172a', color: 'white',
+              padding: '10px', background: adding ? 'var(--action-muted)' : 'var(--action)', color: 'var(--action-text)',
               fontSize: '0.85rem', fontWeight: 500, border: 'none', cursor: adding ? 'not-allowed' : 'pointer',
             }}>
               {adding ? 'Adding...' : `Add ${selected.size} job${selected.size > 1 ? 's' : ''}`}

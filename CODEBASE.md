@@ -1,139 +1,225 @@
-# Crane — Codebase Guide
+# Crane — Codebase Guide (v1.1)
 
 ## How the app is structured
 
-Crane is split into two parts that run separately:
-
 ```
 job-tracker/
-├── main.py          ← Python API (FastAPI)
-├── database.py      ← Database setup and schema
+├── main.py          ← Python API (FastAPI) — scraper + export only
+├── database.py      ← SQLAlchemy schema (SQLite locally, PostgreSQL on Railway)
 ├── scraper.py       ← LinkedIn scraper
-├── job_tracker.py   ← Legacy CLI (not used by the web app)
-├── requirements.txt ← Python dependencies
+├── sources.py       ← Additional job source scrapers
+├── job_tracker.py   ← Legacy CLI (unused by the web app)
+├── requirements.txt
 ├── railway.toml     ← Railway deployment config
-└── frontend/        ← React app (TypeScript)
-    ├── src/
-    │   ├── main.tsx          ← App entry point + routing
-    │   ├── App.tsx           ← Sidebar layout + navigation
-    │   ├── api.ts            ← All fetch calls to the backend
-    │   ├── types.ts          ← TypeScript types (Job, Stats, Status)
-    │   ├── index.css         ← Global styles (Tailwind import)
-    │   ├── pages/
-    │   │   ├── Landing.tsx   ← Marketing landing page (/)
-    │   │   ├── Dashboard.tsx ← Stats and pipeline (/app)
-    │   │   ├── Jobs.tsx      ← Job list with filters (/app → All Jobs)
-    │   │   ├── AddJob.tsx    ← Add job form (/app → Add Job)
-    │   │   └── Scrape.tsx    ← LinkedIn scraper UI (/app → Scrape)
-    │   └── components/
-    │       └── StatusBadge.tsx ← Colored status pill component
-    └── public/
-        └── favicon.svg       ← Crane logo (used as browser tab icon)
+└── frontend/        ← React app (TypeScript + Vite)
+    └── src/
+        ├── main.tsx                   ← Entry point, routing, AuthProvider
+        ├── App.tsx                    ← Sidebar layout + page switching
+        ├── api.ts                     ← Fetch calls to Python backend (scrape/export)
+        ├── types.ts                   ← TypeScript types (Job, Stats, Status)
+        ├── index.css                  ← Global styles
+        ├── context/
+        │   ├── AuthContext.tsx        ← Supabase auth state provider
+        │   └── auth.ts               ← useAuth() hook
+        ├── lib/
+        │   ├── supabase.ts           ← Supabase client (url + anon key from env)
+        │   ├── jobsApi.ts            ← All job CRUD via Supabase (primary data layer)
+        │   └── sentry.ts             ← Sentry init + ErrorBoundary export
+        ├── hooks/
+        │   ├── useTutorial.ts        ← Onboarding checklist state + step logic
+        │   ├── useTheme.ts           ← Dark/light theme toggle (persisted)
+        │   ├── useDebouncedValue.ts  ← Generic debounce hook
+        │   └── useIsMobile.ts        ← Responsive breakpoint hook
+        ├── components/
+        │   ├── RequireAuth.tsx        ← Route guard; redirects to / if not authed
+        │   ├── StatusBadge.tsx        ← Colored status pill
+        │   ├── statusTokens.ts        ← Status color/label constants
+        │   ├── CompanyLogo.tsx        ← Company favicon via Clearbit/Google
+        │   ├── TutorialChecklist.tsx  ← Sidebar onboarding checklist UI
+        │   └── SpotlightOverlay.tsx   ← Highlight overlay for tutorial steps
+        ├── pages/
+        │   ├── Landing.tsx            ← Marketing page (/)
+        │   ├── Onboarding.tsx         ← Post-signup profile setup (/onboarding)
+        │   ├── Dashboard.tsx          ← Stats strip + pipeline view
+        │   ├── Jobs.tsx               ← Kanban board with inline editing
+        │   ├── Scrape.tsx             ← LinkedIn job discovery UI
+        │   ├── Stats.tsx              ← Advanced analytics page
+        │   └── Account.tsx            ← User profile/settings
+        └── utils/
+            ├── offlineDrafts.ts       ← LocalStorage draft queue for offline adds
+            └── companyDomain.ts       ← Utility to extract domain from company name
 ```
+
+---
+
+## Auth (Supabase)
+
+Authentication is handled entirely by Supabase Auth, not the Python backend.
+
+- `lib/supabase.ts` — creates the Supabase client from `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+- `context/AuthContext.tsx` — wraps the app in an `AuthProvider` that subscribes to `supabase.auth.onAuthStateChange` and exposes `{ session, profile, signOut }`.
+- `context/auth.ts` — exports `useAuth()` to consume the context anywhere.
+- `components/RequireAuth.tsx` — wraps the `/app` routes; redirects unauthenticated users to `/`.
+- `/onboarding` — post-signup route where users set their name and target role before hitting the main app.
+
+Routes in `main.tsx`:
+| Path | Component | Protected |
+|------|-----------|-----------|
+| `/` | `Landing` | No |
+| `/onboarding` | `Onboarding` | No |
+| `/app` | `App` | Yes (RequireAuth) |
+
+---
+
+## Data Layer
+
+There are two API layers — which one is used depends on the operation:
+
+### `lib/jobsApi.ts` (Supabase — primary)
+All job CRUD goes directly to the Supabase `jobs` table from the frontend. No Python server involved.
+
+| Operation | Method |
+|-----------|--------|
+| List jobs | `supabase.from('jobs').select('*')` with search/filter/sort |
+| Create job | `.insert(body).select().single()` |
+| Update job | `.update(fields).eq('id', id)` |
+| Bulk update | `.update({ status }).in('id', ids)` |
+| Delete job | `.delete().eq('id', id)` |
+| Clear all | `.delete().eq('user_id', user.id)` |
+| Stats | Computed client-side from a lightweight `select('status,date_applied,date_added')` |
+| Export CSV | Client-side CSV generation from full table select |
+
+### `api.ts` (Python backend — scraper + export only)
+The Python backend is now only used for scraping LinkedIn. All endpoints except `/api/scrape` and `/api/export` are effectively superseded by `jobsApi.ts`.
+
+The scraper now supports streaming: `api.scrapeStream(...)` reads newline-delimited JSON from `/api/scrape/stream` and fires `onEvent` callbacks as pages arrive.
 
 ---
 
 ## Backend (Python / FastAPI)
 
 ### `database.py`
-Defines the database connection and the `jobs` table schema using SQLAlchemy.
-
-- Reads `DATABASE_URL` from environment variables. Locally it defaults to a SQLite file (`crane.db`). On Railway it uses PostgreSQL.
-- `jobs_table` defines the columns: `id`, `company`, `position`, `status`, `date_added`, `date_applied`, `url`, `notes`, `deadline`.
-- `init_db()` creates the table if it doesn't exist, then calls `_migrate_columns()` which safely adds new columns to an existing table using `ALTER TABLE`. This means you can add columns without losing data.
+SQLAlchemy setup. Reads `DATABASE_URL` from env (SQLite locally, PostgreSQL on Railway). `init_db()` creates the `jobs` table and calls `_migrate_columns()` to safely add new columns to existing tables without data loss.
 
 ### `main.py`
-The FastAPI app. Every URL the frontend calls is defined here.
-
-**Endpoints:**
+FastAPI app. Primary role is now the LinkedIn scraper.
 
 | Method | URL | What it does |
 |--------|-----|--------------|
-| GET | `/api/jobs` | List all jobs. Accepts `search`, `status`, `sort` query params. |
-| GET | `/api/stats` | Returns counts by status, response rate, offer rate, and stale count. |
-| POST | `/api/jobs` | Create a new job. |
-| PATCH | `/api/jobs/bulk` | Update the status of multiple jobs at once (bulk update). |
-| PATCH | `/api/jobs/{id}` | Update a single job's status, url, notes, or deadline. |
-| DELETE | `/api/jobs/{id}` | Delete a single job. |
-| DELETE | `/api/jobs` | Delete all jobs. |
-| POST | `/api/scrape` | Run the LinkedIn scraper and return results. |
-| GET | `/api/export` | Download all jobs as a CSV file. |
-
-**Important:** `/api/jobs/bulk` must be defined before `/api/jobs/{id}` in the file, otherwise FastAPI would treat the word "bulk" as a job ID.
-
-**Startup:** When the server starts, `init_db()` runs to create/migrate the database, and `migrate_json()` runs once to import any data from the old `jobs.json` file if the database is empty.
+| GET | `/api/jobs` | List jobs (legacy — frontend now uses Supabase) |
+| GET | `/api/stats` | Stats (legacy) |
+| POST | `/api/jobs` | Create job (legacy) |
+| PATCH | `/api/jobs/bulk` | Bulk status update (legacy) |
+| PATCH | `/api/jobs/{id}` | Update job (legacy) |
+| DELETE | `/api/jobs/{id}` | Delete job (legacy) |
+| DELETE | `/api/jobs` | Clear all (legacy) |
+| POST | `/api/scrape` | Run LinkedIn scraper, return all results |
+| POST | `/api/scrape/stream` | Run scraper, stream results page-by-page (NDJSON) |
+| GET | `/api/export` | Download CSV |
 
 ### `scraper.py`
-Scrapes LinkedIn's public job search page using `requests` and `BeautifulSoup`. Returns a list of `{company, position}` dicts. LinkedIn occasionally blocks scrapers, so results may vary.
+Scrapes LinkedIn public job search using `requests` + `BeautifulSoup`. Uses a `requests.Session` with a warmup request to establish cookies before paginating the `seeMoreJobPostings` API endpoint. Accepts `search`, `location`, `job_type`, `experience`, `workplace`, `date_posted`, `easy_apply` params. Handles 429 with exponential backoff (up to 3 retries), detects LinkedIn login-wall redirects, and tolerates up to 2 consecutive empty pages before stopping. The stream endpoint emits `rate_limited` events instead of raising.
+
+### `sources.py`
+Additional job source scrapers (Greenhouse, Lever, etc.) for multi-source aggregation.
 
 ---
 
-## Frontend (TypeScript / React / Tailwind)
-
-### `types.ts`
-Defines the shapes of data used throughout the app.
-
-- `Job` — a job record with all its fields including the new ones (`url`, `notes`, `deadline`).
-- `Status` — the allowed status values as a TypeScript union type.
-- `Stats` — what the `/api/stats` endpoint returns, including `stale` (jobs needing a follow-up).
-
-### `api.ts`
-A single object (`api`) that wraps every backend call. The frontend never calls `fetch` directly — it always goes through here. This makes it easy to see all API calls in one place and change the base URL.
-
-The base URL is `VITE_API_URL + /api`. In development, `VITE_API_URL` is empty and Vite proxies `/api` to `localhost:8000`. In production (Vercel), `VITE_API_URL` is set to the Railway backend URL.
-
-### `main.tsx`
-Sets up React Router with two routes:
-- `/` → Landing page
-- `/app` → The main tracker app
+## Frontend Detail
 
 ### `App.tsx`
-The sidebar layout. Renders the dark sidebar with the Crane logo, navigation buttons, Export CSV link, and Clear all jobs button. Switches between pages by tracking which nav item is active in React state.
+Sidebar layout. Manages active page in state (`dashboard | jobs | scrape | stats | account`). Renders the sidebar with logo, nav, pipeline counts, tutorial checklist, user info, export CSV, theme toggle, clear-all, and sign out. Mounts `<Analytics />` and `<SpeedInsights />` (Vercel) at the root.
 
 ### Pages
 
-**`Landing.tsx`** — Marketing page at `/`. Has the logo, headline, three feature cards, and a "Get started" button linking to `/app`.
+**`Landing.tsx`** — Marketing page at `/`. Logo, headline, feature cards, auth flow entry.
 
-**`Dashboard.tsx`** — Shows four metric cards (Total, Applied, Interviews, Follow-ups) plus a pipeline bar chart and rate cards. The "Follow-ups" card turns amber when there are jobs with no update in 14+ days.
+**`Onboarding.tsx`** — First-time setup after sign-up. Collects name and target role, writes to Supabase profile.
 
-**`Jobs.tsx`** — The main job list. Key behaviors:
-- Each job card has a colored left border that matches its status color.
-- Clicking the `▾` chevron expands the card to show editable fields: Status, Deadline, URL, Notes.
-- Jobs with no status update in 14+ days show a "Follow up" amber badge.
-- Jobs with a deadline within 3 days (or overdue) show a deadline warning badge.
-- Checkboxes on each card enable bulk selection. When any are selected, a floating bar appears at the bottom to update all selected jobs to a new status at once.
+**`Dashboard.tsx`** — Stats strip (Total, Applied, Interviews, Follow-ups) and pipeline view. Follow-ups card turns amber when stale count > 0.
 
-**`AddJob.tsx`** — Form to manually add a job. Fields: Company, Position, URL, Deadline, Status (pill selector), Notes.
+**`Jobs.tsx`** — Kanban board. Cards have colored left borders by status. Clicking a card expands it to show editable Status, Deadline, URL, Tags, Notes, and richer job metadata inline. Company logos via `CompanyLogo`. Stale and deadline warning badges. Search filters across company, position, and tags; tag chips filter the board.
 
-**`Scrape.tsx`** — Runs the LinkedIn scraper, shows results as a checklist, and adds selected jobs to the database.
+**`Stats.tsx`** — Advanced analytics view: response rate, offer rate, application velocity, source breakdown charts. Uses `useIsMobile` for layout adjustments and is wired into the main `App.tsx` nav.
 
-### `StatusBadge.tsx`
-A small reusable component that renders a colored pill for a job's status. Colors are defined inline — each status has a text color, background color, and border color.
+**`Account.tsx`** — User profile/settings page for name, target role, location, theme, CSV export, clear-all, and sign out. Uses `useIsMobile` and is wired into the main `App.tsx` nav.
+
+**`Scrape.tsx`** — LinkedIn discovery UI. Streams results page-by-page as they arrive from the backend. Users select jobs from the results list to add to their board.
+
+### Components
+
+**`StatusBadge.tsx` / `statusTokens.ts`** — Status color system. Tokens define text, background, and border colors per status. Used across cards and forms.
+
+**`CompanyLogo.tsx`** — Fetches a company's favicon using the Clearbit Logo API or Google favicon service, with a fallback initial.
+
+**`TutorialChecklist.tsx`** — Sidebar checklist for new users. Steps: add a job, find jobs, change a status, set a deadline.
+
+**`SpotlightOverlay.tsx`** — Full-screen overlay that highlights a specific element (by `data-tutorial-id`) to guide users through a step.
+
+**`RequireAuth.tsx`** — Checks `useAuth().session`; renders children if authed, redirects to `/` if not.
+
+### Hooks
+
+**`useTutorial.ts`** — Tracks which tutorial steps are done (localStorage), manages spotlight state, exposes `markDone`, `dismiss`, `setSpotlight`.
+
+**`useTheme.ts`** — Toggles `data-theme` on `<html>`, persists to localStorage.
+
+**`useDebouncedValue.ts`** — Returns a value that only updates after a delay. Used for search inputs.
+
+**`useIsMobile.ts`** — Returns true when viewport width is below the mobile breakpoint.
+
+### Hooks
+
+**`useTutorial.ts`** — Tracks which tutorial steps are done (localStorage key: `crane_tutorial_v1`), manages spotlight state, exposes `markDone`, `dismiss`, `setSpotlight`. Steps: `add_job`, `find_jobs`, `change_status`, `set_deadline`.
+
+**`useTheme.ts`** — Toggles `data-theme` on `<html>`, persists to localStorage. Surfaced in the sidebar and Account settings.
+
+**`useDebouncedValue.ts`** — Returns a value that only updates after a delay. Used for search inputs.
+
+**`useIsMobile.ts`** — Returns true when viewport width is below the mobile breakpoint. Used in `Stats.tsx` and `Account.tsx`.
+
+### Utils
+
+**`offlineDrafts.ts`** — Saves job drafts to localStorage (up to 100) when the user is offline or the API is unavailable. Key: `crane.offlineJobDrafts.v1`.
+
+**`companyDomain.ts`** — Extracts a guessable domain from a company name for logo lookups.
 
 ---
 
 ## How data flows
 
-1. User does something in the UI (clicks a button, submits a form).
-2. A function in the page component calls `api.jobs.something(...)`.
-3. `api.ts` sends a `fetch` request to the FastAPI backend.
-4. FastAPI runs a SQLAlchemy query against the database.
-5. The result comes back as JSON.
-6. React updates state and re-renders.
+1. User action in UI → component calls `jobsApi.something(...)`.
+2. `jobsApi` sends a query directly to Supabase (no Python hop).
+3. Supabase returns JSON; React updates state and re-renders.
+
+For scraping: component calls `api.scrapeStream(...)` → Python backend → LinkedIn → streamed NDJSON back to browser → `onEvent` callbacks update UI incrementally.
+
+---
+
+## Environment Variables
+
+| Variable | Used by | Purpose |
+|----------|---------|---------|
+| `VITE_SUPABASE_URL` | Frontend | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Frontend | Supabase public anon key |
+| `VITE_API_URL` | Frontend | Python backend URL (for scraper/export) |
+| `VITE_SENTRY_DSN` | Frontend | Sentry error tracking (optional) |
+| `DATABASE_URL` | Backend | PostgreSQL (Railway sets this automatically) |
 
 ---
 
 ## Running locally
 
-Double-click `dev.bat`. It opens two terminals:
-- **API** — `python -m uvicorn main:app --reload --port 8000`
+Double-click `dev.bat`. Opens two terminals:
+- **API** — `python -m uvicorn main:app --reload --port 8002`
 - **Frontend** — `npm run dev` inside `frontend/`
 
-Then opens `http://localhost:5173` automatically.
+Then opens `http://localhost:5173`.
 
 ---
 
 ## Deployment
 
-- **Backend → Railway** — push to GitHub, Railway auto-deploys. `railway.toml` tells Railway to run `uvicorn main:app --host 0.0.0.0 --port $PORT`. The PostgreSQL plugin auto-sets `DATABASE_URL`.
-- **Frontend → Vercel** — push to GitHub, Vercel auto-deploys. Root directory is set to `frontend/`. Environment variable `VITE_API_URL` must be set to the Railway backend URL (e.g. `https://crane-production.up.railway.app`).
+- **Backend → Railway** — auto-deploys on push. `railway.toml` runs `uvicorn main:app --host 0.0.0.0 --port $PORT`. PostgreSQL plugin sets `DATABASE_URL`.
+- **Frontend → Vercel** — auto-deploys on push. Root directory: `frontend/`. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_URL` in Vercel env vars.
+- **Observability** — Vercel Analytics + Speed Insights are mounted in `App.tsx`. Sentry is initialized via `lib/sentry.ts` if `VITE_SENTRY_DSN` is set.
