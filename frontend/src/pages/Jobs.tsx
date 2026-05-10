@@ -6,9 +6,41 @@ import { STATUS_LIST, statusTokens } from '../components/statusTokens'
 import { StatusDot } from '../components/StatusBadge'
 import { linkedinJobsUrl } from '../utils/companyDomain'
 
+function suggestDeadline(dateAdded: string | undefined): string {
+  const base = dateAdded ? new Date(dateAdded) : new Date()
+  base.setDate(base.getDate() + 14)
+  return base.toISOString().slice(0, 10)
+}
+
+function inferJobType(position: string): string {
+  const p = position.toLowerCase()
+  if (/\bintern(ship)?\b/.test(p)) return 'Internship'
+  if (/\bcontract(or)?\b|\bfreelance\b/.test(p)) return 'Contract'
+  if (/\bpart[\s-]?time\b/.test(p)) return 'Part-time'
+  if (/\btemp(orary)?\b/.test(p)) return 'Temporary'
+  return ''
+}
+
 function daysSince(date: string | undefined, now: number): number | null {
   if (!date) return null
   return Math.floor((now - new Date(date).getTime()) / 86400000)
+}
+
+function parseTags(value: string): string[] {
+  const seen = new Set<string>()
+  const tags: string[] = []
+  for (const part of value.split(',')) {
+    const tag = part.trim().toLowerCase()
+    if (tag && !seen.has(tag)) {
+      seen.add(tag)
+      tags.push(tag)
+    }
+  }
+  return tags
+}
+
+function tagText(tags: string[] | undefined): string {
+  return (tags ?? []).join(', ')
 }
 
 const fieldStyle: React.CSSProperties = {
@@ -19,7 +51,7 @@ const fieldStyle: React.CSSProperties = {
   fontSize: '0.82rem',
   outline: 'none',
   color: 'var(--ink-800)',
-  background: 'white',
+  background: 'var(--control)',
   boxSizing: 'border-box',
 }
 
@@ -33,10 +65,12 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 5,
 }
 
-export function Jobs({ goScrape }: { goScrape: () => void }) {
+export function Jobs({ goScrape, onStatusChange, onDeadlineSet }: { goScrape: () => void; onStatusChange?: () => void; onDeadlineSet?: () => void }) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [tagFilter, setTagFilter] = useState('')
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<Status | null>(null)
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
@@ -50,12 +84,16 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
   const [now] = useState(() => Date.now())
   const addCompanyRef = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(() =>
-    api.jobs.list().then(data => {
+  const load = useCallback(() => {
+    return Promise.resolve().then(() => api.jobs.list()).then(data => {
+      setError('')
       setJobs(data)
+    }).catch(error => {
+      setError(error instanceof Error ? error.message : 'Could not load jobs.')
+    }).finally(() => {
       setLoading(false)
-    }),
-  [])
+    })
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -72,9 +110,21 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
 
   const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return jobs
-    return jobs.filter(job => `${job.company} ${job.position}`.toLowerCase().includes(q))
-  }, [jobs, search])
+    return jobs.filter(job => {
+      const tags = job.tags ?? []
+      const matchesSearch = !q || `${job.company} ${job.position} ${tags.join(' ')}`.toLowerCase().includes(q)
+      const matchesTag = !tagFilter || tags.includes(tagFilter)
+      return matchesSearch && matchesTag
+    })
+  }, [jobs, search, tagFilter])
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>()
+    for (const job of jobs) {
+      for (const tag of job.tags ?? []) tags.add(tag)
+    }
+    return [...tags].sort((a, b) => a.localeCompare(b))
+  }, [jobs])
 
   const boardStats = useMemo(() => {
     const by = Object.fromEntries(STATUS_LIST.map(s => [s, 0])) as Record<Status, number>
@@ -86,38 +136,78 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
 
   const updateStatus = async (id: string, status: Status) => {
     const prev = jobs
-    setJobs(current => current.map(j => j.id === id ? { ...j, status } : j))
-    setSelectedJob(current => current?.id === id ? { ...current, status } : current)
+    const existing = jobs.find(j => j.id === id)
+    const dateApplied = status === 'Applied' && !existing?.date_applied
+      ? new Date().toISOString().slice(0, 10)
+      : undefined
+    setJobs(current => current.map(j => j.id === id ? { ...j, status, ...(dateApplied ? { date_applied: dateApplied } : {}) } : j))
+    setSelectedJob(current => current?.id === id ? { ...current, status, ...(dateApplied ? { date_applied: dateApplied } : {}) } : current)
     try {
-      await api.jobs.update(id, { status })
-    } catch {
+      await api.jobs.update(id, { status, ...(dateApplied ? { date_applied: dateApplied } : {}) })
+      onStatusChange?.()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not update status.')
       setJobs(prev)
     }
   }
 
   const openDetail = (job: Job) => {
     setSelectedJob(job)
-    setEditFields({ status: job.status, url: job.url ?? '', notes: job.notes ?? '', deadline: job.deadline ?? '' })
+    setEditFields({
+      status: job.status,
+      url: job.url ?? '',
+      location: job.location ?? '',
+      salary: job.salary ?? '',
+      job_type: job.job_type || inferJobType(job.position),
+      source: job.source ?? '',
+      job_id: job.job_id ?? '',
+      logo_url: job.logo_url ?? '',
+      tags: job.tags ?? [],
+      notes: job.notes ?? '',
+      deadline: job.deadline || suggestDeadline(job.date_added),
+    })
   }
 
   const save = async () => {
     if (!selectedJob) return
     setSaving(true)
-    await api.jobs.update(selectedJob.id, {
-      status: editFields.status,
-      url: editFields.url,
-      notes: editFields.notes,
-      deadline: editFields.deadline,
-    })
-    setSaving(false)
-    setSelectedJob(null)
-    load()
+    setError('')
+    try {
+      await api.jobs.update(selectedJob.id, {
+        status: editFields.status,
+        url: editFields.url,
+        location: editFields.location,
+        salary: editFields.salary,
+        job_type: editFields.job_type,
+        tags: editFields.tags,
+        source: editFields.source,
+        job_id: editFields.job_id,
+        logo_url: editFields.logo_url,
+        notes: editFields.notes,
+        deadline: editFields.deadline,
+      })
+      if (editFields.deadline) onDeadlineSet?.()
+      setSelectedJob(null)
+      load()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not save job.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const remove = async (id: string) => {
-    await api.jobs.delete(id)
-    setSelectedJob(null)
-    load()
+    setSaving(true)
+    setError('')
+    try {
+      await api.jobs.delete(id)
+      setSelectedJob(null)
+      load()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not delete job.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleDrop = (status: Status) => {
@@ -144,10 +234,13 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
     const position = newPosition.trim()
     if (!company || !position) return
     setAdding(true)
+    setError('')
     try {
       await api.jobs.create({ company, position, status })
       cancelAdding()
       load()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not add job.')
     } finally {
       setAdding(false)
     }
@@ -168,7 +261,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
             placeholder="Search..."
             style={{
               width: '100%', height: 34, padding: '0 12px 0 34px', borderRadius: 8,
-              border: '1px solid var(--ink-150)', background: 'white', fontSize: 13,
+              border: '1px solid var(--ink-150)', background: 'var(--card)', fontSize: 13,
               color: 'var(--ink-800)', outline: 'none', boxSizing: 'border-box',
             }}
             onFocus={e => (e.currentTarget.style.borderColor = 'var(--ink-400)')}
@@ -195,10 +288,42 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
             )}
           </div>
         )}
+
+        {allTags.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', width: '100%' }}>
+            <button
+              onClick={() => setTagFilter('')}
+              style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 999, padding: '4px 9px', border: '1px solid var(--ink-150)', background: !tagFilter ? 'var(--action)' : 'var(--control)', color: !tagFilter ? 'var(--action-text)' : 'var(--ink-500)', cursor: 'pointer' }}
+            >
+              All tags
+            </button>
+            {allTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setTagFilter(current => current === tag ? '' : tag)}
+                style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 999, padding: '4px 9px', border: '1px solid var(--accent-line)', background: tagFilter === tag ? 'var(--accent)' : 'var(--accent-bg)', color: tagFilter === tag ? 'var(--action-text)' : 'var(--accent)', cursor: 'pointer' }}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
+      {error && (
+        <div style={{ marginBottom: 12, border: '1px solid var(--danger-line)', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: 8, padding: '9px 11px', fontSize: 12, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+          Loading jobs...
+        </div>
+      )}
+
       {/* Empty state */}
-      {isEmpty ? (
+      {!loading && isEmpty ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, textAlign: 'center', padding: 40 }}>
           <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-800)', margin: 0, letterSpacing: '-0.02em' }}>No jobs yet</p>
           <p style={{ fontSize: 14, color: 'var(--ink-400)', margin: 0, maxWidth: 340, lineHeight: 1.6 }}>
@@ -206,20 +331,21 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
           </p>
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
             <button
+              data-tutorial-id="add-job-btn"
               onClick={() => startAdding('Not Applied')}
-              style={{ fontSize: 13, fontWeight: 600, padding: '8px 18px', borderRadius: 8, background: 'var(--ink-900)', color: 'white', border: 'none', cursor: 'pointer' }}
+              style={{ fontSize: 13, fontWeight: 600, padding: '8px 18px', borderRadius: 8, background: 'var(--action)', color: 'var(--action-text)', border: 'none', cursor: 'pointer' }}
             >
               + Add a job
             </button>
             <button
               onClick={goScrape}
-              style={{ fontSize: 13, fontWeight: 600, padding: '8px 18px', borderRadius: 8, background: 'white', color: 'var(--ink-700)', border: '1px solid var(--ink-150)', cursor: 'pointer' }}
+              style={{ fontSize: 13, fontWeight: 600, padding: '8px 18px', borderRadius: 8, background: 'var(--control)', color: 'var(--ink-700)', border: '1px solid var(--ink-150)', cursor: 'pointer' }}
             >
               Scrape LinkedIn
             </button>
           </div>
         </div>
-      ) : (
+      ) : !loading && (
         /* Kanban columns */
         <div style={{
           display: 'grid',
@@ -246,7 +372,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  background: isOver ? 'var(--ink-50)' : 'var(--ink-100)',
+                  background: isOver ? 'var(--surface-muted)' : 'var(--ink-50)',
                   borderRadius: 12,
                   border: `2px solid ${isOver ? token.dot : 'transparent'}`,
                   transition: 'border-color 0.1s, background 0.1s',
@@ -258,7 +384,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-600)', letterSpacing: '0.05em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {status.toUpperCase()}
                   </span>
-                  <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-400)', background: 'white', borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-400)', background: 'var(--control)', borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>
                     {columnJobs.length}
                   </span>
                   <button
@@ -280,7 +406,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
 
                 {/* Inline add form */}
                 {isAdding && (
-                  <div style={{ margin: '0 8px 6px', background: 'white', borderRadius: 9, border: '1px solid var(--ink-300)', padding: '10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ margin: '0 8px 6px', background: 'var(--card)', borderRadius: 9, border: '1px solid var(--ink-300)', padding: '10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <input
                       ref={addCompanyRef}
                       placeholder="Company"
@@ -305,7 +431,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                         disabled={adding || !newCompany.trim() || !newPosition.trim()}
                         style={{
                           flex: 1, fontSize: 11.5, fontWeight: 700, padding: '5px 0',
-                          borderRadius: 6, background: 'var(--ink-900)', color: 'white',
+                          borderRadius: 6, background: 'var(--action)', color: 'var(--action-text)',
                           border: 'none', cursor: adding ? 'not-allowed' : 'pointer', opacity: (!newCompany.trim() || !newPosition.trim()) ? 0.4 : 1,
                         }}
                       >
@@ -313,7 +439,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                       </button>
                       <button
                         onClick={cancelAdding}
-                        style={{ fontSize: 11.5, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--ink-150)', background: 'white', color: 'var(--ink-600)', cursor: 'pointer' }}
+                        style={{ fontSize: 11.5, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--ink-150)', background: 'var(--control)', color: 'var(--ink-600)', cursor: 'pointer' }}
                       >
                         Cancel
                       </button>
@@ -340,7 +466,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                         onDragEnd={() => { setDraggingId(null); setDragOverColumn(null) }}
                         onClick={() => openDetail(job)}
                         style={{
-                          background: 'white', borderRadius: 9, border: '1px solid var(--ink-150)',
+                          background: 'var(--card)', borderRadius: 9, border: '1px solid var(--ink-150)',
                           padding: '9px 10px', cursor: 'grab', opacity: isDragging ? 0.35 : 1,
                           transition: 'opacity 0.1s, box-shadow 0.1s', userSelect: 'none',
                           boxShadow: 'var(--shadow-sm)',
@@ -349,7 +475,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                         onMouseLeave={e => (e.currentTarget.style.boxShadow = 'var(--shadow-sm)')}
                       >
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
-                          <CompanyLogo company={job.company} size={24} />
+                          <CompanyLogo company={job.company} logoUrl={job.logo_url} size={24} />
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-900)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {job.position}
@@ -359,7 +485,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                             </p>
                           </div>
                         </div>
-                        {(age !== null || stale || job.notes?.trim()) && (
+                        {(age !== null || stale || job.notes?.trim() || (job.tags?.length ?? 0) > 0) && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 7, flexWrap: 'wrap' }}>
                             {age !== null && (
                               <span style={{ fontSize: 10, color: 'var(--ink-300)' }}>
@@ -374,6 +500,11 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                             {job.notes?.trim() && (
                               <span style={{ fontSize: 10, color: 'var(--ink-300)', marginLeft: 'auto' }}>✎</span>
                             )}
+                            {(job.tags ?? []).slice(0, 3).map(tag => (
+                              <span key={tag} style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-bg)', border: '1px solid var(--accent-line)', padding: '1px 5px', borderRadius: 999 }}>
+                                {tag}
+                              </span>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -400,10 +531,10 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{ background: 'white', borderRadius: 16, padding: 24, width: 460, maxWidth: 'calc(100vw - 40px)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 16 }}
+            style={{ background: 'var(--card)', borderRadius: 16, padding: 24, width: 460, maxWidth: 'calc(100vw - 40px)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 16 }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-              <CompanyLogo company={selectedJob.company} size={36} />
+              <CompanyLogo company={selectedJob.company} logoUrl={selectedJob.logo_url} size={36} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>{selectedJob.position}</p>
                 <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--ink-500)' }}>{selectedJob.company}</p>
@@ -417,6 +548,7 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
               <div>
                 <label style={labelStyle}>Status</label>
                 <select
+                  data-tutorial-id="status-pill"
                   value={editFields.status}
                   onChange={e => {
                     const status = e.target.value as Status
@@ -430,7 +562,26 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
               </div>
               <div>
                 <label style={labelStyle}>Deadline</label>
-                <input type="date" value={editFields.deadline ?? ''} onChange={e => setEditFields(f => ({ ...f, deadline: e.target.value }))} style={fieldStyle} />
+                <input data-tutorial-id="deadline-field" type="date" value={editFields.deadline ?? ''} onChange={e => setEditFields(f => ({ ...f, deadline: e.target.value }))} style={fieldStyle} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Location</label>
+                <input value={editFields.location ?? ''} onChange={e => setEditFields(f => ({ ...f, location: e.target.value }))} placeholder="New York, NY" style={fieldStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Job type</label>
+                <input value={editFields.job_type ?? ''} onChange={e => setEditFields(f => ({ ...f, job_type: e.target.value }))} placeholder="Internship, full-time..." style={fieldStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Salary</label>
+                <input value={editFields.salary ?? ''} onChange={e => setEditFields(f => ({ ...f, salary: e.target.value }))} placeholder="$90k - $120k" style={fieldStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Source</label>
+                <input value={editFields.source ?? ''} onChange={e => setEditFields(f => ({ ...f, source: e.target.value }))} placeholder="LinkedIn" style={fieldStyle} />
               </div>
             </div>
 
@@ -454,6 +605,16 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
             </div>
 
             <div>
+              <label style={labelStyle}>LinkedIn job ID</label>
+              <input placeholder="4398329491" value={editFields.job_id ?? ''} onChange={e => setEditFields(f => ({ ...f, job_id: e.target.value }))} style={fieldStyle} />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Tags</label>
+              <input placeholder="remote, frontend, referral" value={tagText(editFields.tags)} onChange={e => setEditFields(f => ({ ...f, tags: parseTags(e.target.value) }))} style={fieldStyle} />
+            </div>
+
+            <div>
               <label style={labelStyle}>Notes</label>
               <textarea rows={3} placeholder="Interview prep, contacts, salary..." value={editFields.notes ?? ''} onChange={e => setEditFields(f => ({ ...f, notes: e.target.value }))} style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }} />
             </div>
@@ -468,10 +629,10 @@ export function Jobs({ goScrape }: { goScrape: () => void }) {
                 Delete
               </button>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setSelectedJob(null)} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--ink-150)', background: 'white', color: 'var(--ink-700)', cursor: 'pointer' }}>
+                <button onClick={() => setSelectedJob(null)} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--ink-150)', background: 'var(--control)', color: 'var(--ink-700)', cursor: 'pointer' }}>
                   Close
                 </button>
-                <button onClick={save} disabled={saving} style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 6, background: 'var(--ink-900)', color: 'white', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                <button onClick={save} disabled={saving} style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 6, background: 'var(--action)', color: 'var(--action-text)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
                   {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>

@@ -3,10 +3,10 @@ import { lookupDomain } from '../utils/companyDomain'
 
 const TOKEN = import.meta.env.VITE_LOGO_DEV_TOKEN ?? ''
 
-const avatarBg   = ['#dbeafe','#fef3c7','#dcfce7','#fce7f3','#ede9fe','#ffedd5']
-const avatarText = ['#1d4ed8','#92400e','#166534','#9d174d','#5b21b6','#c2410c']
+const avatarBg   = ['var(--surface-muted)','var(--accent-bg)','var(--applied-bg)','var(--interview-bg)','var(--warn-bg)','var(--danger-bg)']
+const avatarText = ['var(--ink-700)','var(--accent)','var(--applied)','var(--interview)','var(--warn)','var(--danger)']
 
-export function CompanyLogo({ company, size = 32 }: { company: string; size?: number }) {
+export function CompanyLogo({ company, logoUrl, size = 32 }: { company: string; logoUrl?: string | null; size?: number }) {
   const [domain, setDomain] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -15,9 +15,10 @@ export function CompanyLogo({ company, size = 32 }: { company: string; size?: nu
   const radius  = Math.round(size * 0.22)
 
   useEffect(() => {
+    if (logoUrl) return
     if (domain !== null) return
     lookupDomain(company).then(setDomain)
-  }, [company, domain])
+  }, [company, domain, logoUrl])
 
   const avatar = (
     <div style={{
@@ -28,12 +29,32 @@ export function CompanyLogo({ company, size = 32 }: { company: string; size?: nu
     </div>
   )
 
-  if (failed || !domain || !TOKEN) return avatar
+  if (failed) return avatar
+
+  if (logoUrl) {
+    return (
+      <div style={{
+        width: size, height: size, borderRadius: radius, flexShrink: 0,
+        background: 'var(--surface-muted)', border: '1px solid var(--ink-100)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
+      }}>
+        <img
+          src={logoUrl}
+          alt={company}
+          onError={() => setFailed(true)}
+          style={{ width: size, height: size, objectFit: 'contain' }}
+        />
+      </div>
+    )
+  }
+
+  if (!domain || !TOKEN) return avatar
 
   return (
     <div style={{
       width: size, height: size, borderRadius: radius, flexShrink: 0,
-      background: '#f8fafc', border: '1px solid #f1f5f9',
+      background: 'var(--surface-muted)', border: '1px solid var(--ink-100)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       overflow: 'hidden',
     }}>

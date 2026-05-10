@@ -1,16 +1,37 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import select, insert, update, delete
-import uuid, csv, io, json, os
+import uuid, csv, io, json, os, requests
 from datetime import datetime
 
 from database import engine, jobs_table, init_db
 
 STATUSES = ["Not Applied", "Applied", "Interview", "Offer", "Rejected"]
+
+
+def load_local_env_file(path: str) -> None:
+    if not os.path.exists(path):
+        return
+
+    with open(path, encoding="utf-8") as env_file:
+        for line in env_file:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_local_env_file(os.path.join("frontend", ".env"))
+load_local_env_file(os.path.join("frontend", ".env.local"))
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("VITE_SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 
 def normalize_status(s: str) -> str:
@@ -21,7 +42,79 @@ def normalize_status(s: str) -> str:
 
 
 def row_to_dict(row) -> dict:
-    return dict(row._mapping)
+    data = dict(row._mapping)
+    raw_tags = data.get("tags")
+    if isinstance(raw_tags, str) and raw_tags.strip():
+        try:
+            parsed = json.loads(raw_tags)
+            data["tags"] = [str(tag).strip() for tag in parsed if str(tag).strip()] if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            data["tags"] = [tag.strip() for tag in raw_tags.split(",") if tag.strip()]
+    else:
+        data["tags"] = []
+    return data
+
+
+def normalize_tags(tags: list[str] | None) -> str | None:
+    if tags is None:
+        return None
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for tag in tags:
+        value = str(tag).strip().lower()
+        if value and value not in seen:
+            seen.add(value)
+            cleaned.append(value)
+    return json.dumps(cleaned)
+
+
+def validate_auth_token(authorization: str | None) -> dict:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing auth token")
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(status_code=500, detail="Supabase auth is not configured")
+
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        response = requests.get(
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/user",
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=5,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=503, detail="Could not validate auth token")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+    user = response.json()
+
+    # Access tokens are JWTs, so an already-issued token can briefly outlive an
+    # admin deletion. A service-role lookup lets deployed apps reject deleted
+    # accounts immediately instead of waiting for token expiry.
+    if SUPABASE_SERVICE_ROLE_KEY and user.get("id"):
+        try:
+            admin_response = requests.get(
+                f"{SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user['id']}",
+                headers={
+                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                },
+                timeout=5,
+            )
+        except requests.RequestException:
+            raise HTTPException(status_code=503, detail="Could not verify auth user")
+
+        if admin_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Auth user no longer exists")
+
+    return user
+
+
+def require_auth(authorization: str | None = Header(default=None)) -> dict:
+    return validate_auth_token(authorization)
 
 
 def migrate_json():
@@ -73,12 +166,28 @@ class JobCreate(BaseModel):
     url:      Optional[str] = None
     notes:    Optional[str] = None
     deadline: Optional[str] = None
+    location: Optional[str] = None
+    salary:   Optional[str] = None
+    job_type: Optional[str] = None
+    tags:     Optional[list[str]] = None
+    source:   Optional[str] = None
+    job_id:   Optional[str] = None
+    logo_url:        Optional[str] = None
+    applicant_count: Optional[int] = None
 
 class JobUpdate(BaseModel):
-    status:   Optional[str] = None
-    url:      Optional[str] = None
-    notes:    Optional[str] = None
-    deadline: Optional[str] = None
+    status:          Optional[str] = None
+    url:             Optional[str] = None
+    notes:           Optional[str] = None
+    deadline:        Optional[str] = None
+    location:        Optional[str] = None
+    salary:          Optional[str] = None
+    job_type:        Optional[str] = None
+    tags:            Optional[list[str]] = None
+    source:          Optional[str] = None
+    job_id:          Optional[str] = None
+    logo_url:        Optional[str] = None
+    applicant_count: Optional[int] = None
 
 class BulkUpdate(BaseModel):
     ids:    list[str]
@@ -87,8 +196,18 @@ class BulkUpdate(BaseModel):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@app.get("/api/auth/validate")
+def validate_session(current_user: dict = Depends(require_auth)):
+    return {"id": current_user.get("id")}
+
+
 @app.get("/api/jobs")
-def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
+def list_jobs(
+    search: str = "",
+    status: str = "",
+    sort: str = "date_desc",
+    _current_user: dict = Depends(require_auth),
+):
     with engine.connect() as conn:
         rows = conn.execute(select(jobs_table)).fetchall()
 
@@ -96,7 +215,12 @@ def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
 
     if search:
         q = search.lower()
-        jobs = [j for j in jobs if q in j["company"].lower() or q in j["position"].lower()]
+        jobs = [
+            j for j in jobs
+            if q in j["company"].lower()
+            or q in j["position"].lower()
+            or any(q in tag.lower() for tag in j.get("tags", []))
+        ]
 
     if status:
         statuses = set(status.split(","))
@@ -116,7 +240,7 @@ def list_jobs(search: str = "", status: str = "", sort: str = "date_desc"):
 
 
 @app.get("/api/stats")
-def stats():
+def stats(_current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         rows = conn.execute(select(jobs_table)).fetchall()
 
@@ -152,24 +276,116 @@ def stats():
     }
 
 
+@app.get("/api/stats/advanced")
+def advanced_stats(_current_user: dict = Depends(require_auth)):
+    with engine.connect() as conn:
+        rows = conn.execute(select(jobs_table)).fetchall()
+
+    jobs = [row_to_dict(r) for r in rows]
+    total = len(jobs)
+    counts = {s: 0 for s in STATUSES}
+    for job in jobs:
+        ns = normalize_status(job["status"])
+        if ns in counts:
+            counts[ns] += 1
+
+    funnel = [
+        {
+            "stage": status,
+            "count": counts[status],
+            "rate": round(counts[status] / total * 100) if total else None,
+        }
+        for status in STATUSES
+    ]
+
+    today = datetime.now().date()
+    velocity_buckets = [0 for _ in range(12)]
+    for job in jobs:
+        ref = job.get("date_applied") or job.get("date_added")
+        if not ref:
+            continue
+        try:
+            weeks_ago = (today - datetime.strptime(ref, "%Y-%m-%d").date()).days // 7
+        except ValueError:
+            continue
+        if 0 <= weeks_ago < len(velocity_buckets):
+            velocity_buckets[weeks_ago] += 1
+
+    velocity = [
+        {"label": f"{11 - index}w ago" if index < 11 else "now", "count": count}
+        for index, count in enumerate(reversed(velocity_buckets))
+    ]
+
+    by_source_map: dict[str, dict[str, int]] = {}
+    for job in jobs:
+        source = (job.get("source") or "manual").lower()
+        bucket = by_source_map.setdefault(source, {"total": 0, "replied": 0})
+        bucket["total"] += 1
+        if normalize_status(job["status"]) in ("Interview", "Offer", "Rejected"):
+            bucket["replied"] += 1
+
+    by_source = [
+        {
+            "source": source,
+            "total": values["total"],
+            "replied": values["replied"],
+            "rate": round(values["replied"] / values["total"] * 100) if values["total"] else 0,
+        }
+        for source, values in sorted(by_source_map.items())
+    ]
+
+    response_days = []
+    for job in jobs:
+        if normalize_status(job["status"]) not in ("Interview", "Offer", "Rejected"):
+            continue
+        added = job.get("date_added")
+        applied = job.get("date_applied") or added
+        if not added or not applied:
+            continue
+        try:
+            response_days.append((datetime.strptime(applied, "%Y-%m-%d") - datetime.strptime(added, "%Y-%m-%d")).days)
+        except ValueError:
+            continue
+
+    return {
+        "funnel": funnel,
+        "velocity": velocity,
+        "by_source": by_source,
+        "rejected": counts["Rejected"],
+        "avg_response_days": round(sum(response_days) / len(response_days), 1) if response_days else None,
+        "response_count": len(response_days),
+    }
+
+
 @app.delete("/api/jobs", status_code=204)
-def clear_jobs():
+def clear_jobs(_current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         conn.execute(delete(jobs_table))
         conn.commit()
 
 
 @app.post("/api/jobs", status_code=201)
-def add_job(body: JobCreate):
+def add_job(body: JobCreate, _current_user: dict = Depends(require_auth)):
     company  = body.company.strip()
     position = body.position.strip()
 
     # Deduplication check
     with engine.connect() as conn:
         existing = conn.execute(select(jobs_table)).fetchall()
+    body_job_id = (body.job_id or "").strip()
+    body_url = (body.url or "").strip()
+    body_location = (body.location or "").strip()
     for row in existing:
         r = row_to_dict(row)
-        if r["company"].lower() == company.lower() and r["position"].lower() == position.lower():
+        existing_job_id = (r.get("job_id") or "").strip()
+        existing_url = (r.get("url") or "").strip()
+        if body_job_id and existing_job_id and body_job_id == existing_job_id:
+            raise HTTPException(status_code=409, detail="Job already exists")
+        if body_url and existing_url and body_url == existing_url:
+            raise HTTPException(status_code=409, detail="Job already exists")
+        same_role = r["company"].lower() == company.lower() and r["position"].lower() == position.lower()
+        same_location = (r.get("location") or "").strip().lower() == body_location.lower()
+        if same_role and same_location:
             raise HTTPException(status_code=409, detail="Job already exists")
 
     now = datetime.now().strftime("%Y-%m-%d")
@@ -183,6 +399,13 @@ def add_job(body: JobCreate):
         "url":          body.url,
         "notes":        body.notes,
         "deadline":     body.deadline,
+        "location":     body.location,
+        "salary":       body.salary,
+        "job_type":     body.job_type,
+        "tags":         normalize_tags(body.tags) or "[]",
+        "source":       body.source,
+        "job_id":       body.job_id,
+        "logo_url":     body.logo_url,
     }
     with engine.connect() as conn:
         conn.execute(insert(jobs_table).values(**job))
@@ -192,7 +415,7 @@ def add_job(body: JobCreate):
 
 # Bulk must come before /{job_id} so "bulk" isn't matched as an ID
 @app.patch("/api/jobs/bulk")
-def bulk_update(body: BulkUpdate):
+def bulk_update(body: BulkUpdate, _current_user: dict = Depends(require_auth)):
     now = datetime.now().strftime("%Y-%m-%d")
     with engine.connect() as conn:
         for job_id in body.ids:
@@ -207,7 +430,7 @@ def bulk_update(body: BulkUpdate):
 
 
 @app.patch("/api/jobs/{job_id}")
-def update_job(job_id: str, body: JobUpdate):
+def update_job(job_id: str, body: JobUpdate, _current_user: dict = Depends(require_auth)):
     values: dict = {}
 
     if body.status is not None:
@@ -221,6 +444,13 @@ def update_job(job_id: str, body: JobUpdate):
     if body.url      is not None: values["url"]      = body.url
     if body.notes    is not None: values["notes"]    = body.notes
     if body.deadline is not None: values["deadline"] = body.deadline
+    if body.location is not None: values["location"] = body.location
+    if body.salary   is not None: values["salary"]   = body.salary
+    if body.job_type is not None: values["job_type"] = body.job_type
+    if body.tags     is not None: values["tags"]     = normalize_tags(body.tags)
+    if body.source   is not None: values["source"]   = body.source
+    if body.job_id   is not None: values["job_id"]   = body.job_id
+    if body.logo_url is not None: values["logo_url"] = body.logo_url
 
     if not values:
         raise HTTPException(status_code=400, detail="Nothing to update")
@@ -236,7 +466,7 @@ def update_job(job_id: str, body: JobUpdate):
 
 
 @app.delete("/api/jobs/{job_id}", status_code=204)
-def delete_job(job_id: str):
+def delete_job(job_id: str, _current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         result = conn.execute(delete(jobs_table).where(jobs_table.c.id == job_id))
         conn.commit()
@@ -248,11 +478,14 @@ def delete_job(job_id: str):
 def scrape(
     search: str = "Software Engineer",
     location: str = "California",
+    page: int = 1,
+    pages: int = 3,
     job_type: Optional[list[str]] = Query(None),
     experience: Optional[list[str]] = Query(None),
     workplace: Optional[list[str]] = Query(None),
     date_posted: str | None = None,
     easy_apply: bool = False,
+    _current_user: dict = Depends(require_auth),
 ):
     from scraper import scrape_linkedin_jobs
     return scrape_linkedin_jobs(
@@ -263,6 +496,8 @@ def scrape(
         workplace_types=workplace,
         date_posted=date_posted,
         easy_apply=easy_apply,
+        start_page=max(0, page - 1),
+        max_pages=max(1, min(pages, 10)),
     )
 
 
@@ -270,11 +505,14 @@ def scrape(
 def scrape_stream(
     search: str = "Software Engineer",
     location: str = "California",
+    page: int = 1,
+    pages: int = 3,
     job_type: Optional[list[str]] = Query(None),
     experience: Optional[list[str]] = Query(None),
     workplace: Optional[list[str]] = Query(None),
     date_posted: str | None = None,
     easy_apply: bool = False,
+    _current_user: dict = Depends(require_auth),
 ):
     from scraper import scrape_linkedin_job_pages
 
@@ -288,6 +526,8 @@ def scrape_stream(
             workplace_types=workplace,
             date_posted=date_posted,
             easy_apply=easy_apply,
+            start_page=max(0, page - 1),
+            max_pages=max(1, min(pages, 10)),
         ):
             if event["type"] == "page":
                 total += len(event["jobs"])
@@ -299,7 +539,7 @@ def scrape_stream(
 
 
 @app.get("/api/export")
-def export_csv():
+def export_csv(_current_user: dict = Depends(require_auth)):
     with engine.connect() as conn:
         rows = conn.execute(select(jobs_table)).fetchall()
 
@@ -307,11 +547,11 @@ def export_csv():
     output = io.StringIO()
     writer = csv.DictWriter(
         output,
-        fieldnames=["company", "position", "status", "date_added", "date_applied", "url", "deadline", "notes"],
+        fieldnames=["company", "position", "status", "date_added", "date_applied", "location", "salary", "job_type", "tags", "source", "job_id", "logo_url", "url", "deadline", "notes"],
         extrasaction="ignore",
     )
     writer.writeheader()
-    writer.writerows(jobs)
+    writer.writerows([{**job, "tags": ", ".join(job.get("tags", []))} for job in jobs])
 
     filename = f"crane_jobs_{datetime.now().strftime('%Y%m%d')}.csv"
     return StreamingResponse(

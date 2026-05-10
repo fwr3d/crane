@@ -5,6 +5,7 @@ import { CompanyLogo } from '../components/CompanyLogo'
 import { StatusDot, StatusPill } from '../components/StatusBadge'
 import { STATUS_LIST, statusTokens } from '../components/statusTokens'
 import { useAuth } from '../context/auth'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { linkedinJobsUrl } from '../utils/companyDomain'
 
 type QueueItem = {
@@ -80,20 +81,20 @@ function buildQueue(jobs: Job[], now: number): QueueItem[] {
   return items.sort((a, b) => b.urgency - a.urgency).slice(0, 6)
 }
 
-function BigStat({ label, value, sub, accent = false }: { label: string; value: string | number; sub: string; accent?: boolean }) {
+function BigStat({ label, value, sub, accent = false, compact = false }: { label: string; value: string | number; sub: string; accent?: boolean; compact?: boolean }) {
   return (
     <div style={{
-      background: accent ? 'var(--ink-900)' : 'var(--card)',
-      color: accent ? 'white' : 'var(--ink-900)',
+      background: accent ? 'var(--action)' : 'var(--card)',
+      color: accent ? 'var(--action-text)' : 'var(--ink-900)',
       border: accent ? 'none' : '1px solid var(--ink-150)',
       borderRadius: 'var(--radius-lg)',
-      padding: '20px 22px',
+      padding: compact ? '14px 16px' : '20px 22px',
       boxShadow: accent ? 'none' : 'var(--shadow-sm)',
     }}>
       <div style={{ fontSize: 10.5, color: accent ? '#94a3b8' : 'var(--ink-400)', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>
         {label}
       </div>
-      <div className="tabular" style={{ fontSize: 42, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1, marginTop: 10 }}>
+      <div className="tabular" style={{ fontSize: compact ? 30 : 42, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1, marginTop: compact ? 6 : 10 }}>
         {value}
       </div>
       <div style={{ fontSize: 11.5, color: accent ? '#94a3b8' : 'var(--ink-400)', marginTop: 6 }}>
@@ -109,6 +110,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
   const [linkedinUrls, setLinkedinUrls] = useState<Map<string, string>>(new Map())
   const [now] = useState(() => Date.now())
   const { profile } = useAuth()
+  const isMobile = useIsMobile()
 
   const load = () => {
     api.jobs.list()
@@ -200,14 +202,14 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
         </p>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 12, marginBottom: 32 }}>
-        <BigStat label="In flight" value={stats.inFlight} sub={`${stats.by.Interview} interviewing`} accent />
-        <BigStat label="Offers" value={stats.by.Offer} sub="open" />
-        <BigStat label="Response" value={`${stats.responseRate}%`} sub="reply rate" />
-        <BigStat label="Queue" value={stats.by['Not Applied']} sub="to apply" />
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : '1.4fr 1fr 1fr 1fr', gap: 12, marginBottom: 32 }}>
+        <BigStat label="In flight" value={stats.inFlight} sub={`${stats.by.Interview} interviewing`} accent compact={isMobile} />
+        <BigStat label="Offers" value={stats.by.Offer} sub="open" compact={isMobile} />
+        <BigStat label="Response" value={`${stats.responseRate}%`} sub="reply rate" compact={isMobile} />
+        <BigStat label="Queue" value={stats.by['Not Applied']} sub="to apply" compact={isMobile} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 24, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 24, alignItems: 'start' }}>
         <section style={{ background: 'var(--card)', border: '1px solid var(--ink-150)', borderRadius: 'var(--radius-lg)', padding: 22, boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 18 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.015em', color: 'var(--ink-900)' }}>
@@ -232,15 +234,17 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
               {queue.map((item, index) => (
                 <li key={`${item.job.id}-${item.kind}`} style={{
                   display: 'grid',
-                  gridTemplateColumns: '24px minmax(0, 1fr) auto auto',
+                  gridTemplateColumns: isMobile ? 'minmax(0, 1fr) auto' : '24px minmax(0, 1fr) auto auto',
                   alignItems: 'center',
                   gap: 12,
                   padding: '10px 8px',
                   borderTop: index === 0 ? 'none' : '1px solid var(--ink-100)',
                 }}>
-                  <span className="tabular" style={{ fontSize: 11, color: 'var(--ink-300)', fontWeight: 700 }}>
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
+                  {!isMobile && (
+                    <span className="tabular" style={{ fontSize: 11, color: 'var(--ink-300)', fontWeight: 700 }}>
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                  )}
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {item.job.position}
@@ -261,7 +265,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
                       )}
                     </div>
                   </div>
-                  <StatusPill status={item.job.status} onChange={status => updateStatus(item.job.id, status)} />
+                  {!isMobile && <StatusPill status={item.job.status} onChange={status => updateStatus(item.job.id, status)} />}
                   <a
                     href={linkedinUrls.get(item.job.id) || '#'}
                     target="_blank"
@@ -272,7 +276,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
                       padding: '5px 10px',
                       borderRadius: 6,
                       border: '1px solid var(--ink-150)',
-                      background: 'white',
+                      background: 'var(--control)',
                       color: 'var(--ink-700)',
                       textDecoration: 'none',
                       whiteSpace: 'nowrap',
@@ -287,7 +291,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
         </section>
 
         <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ background: 'var(--ink-900)', color: 'white', borderRadius: 'var(--radius-lg)', padding: 22 }}>
+          <div style={{ background: 'var(--action)', color: 'var(--action-text)', borderRadius: 'var(--radius-lg)', padding: 22 }}>
             <div style={{ fontSize: 10.5, color: '#64748b', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>
               Momentum
             </div>
@@ -362,7 +366,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
                   padding: '12px 18px',
                   borderTop: index === 0 ? 'none' : '1px solid var(--ink-100)',
                 }}>
-                  <CompanyLogo company={job.company} size={32} />
+                  <CompanyLogo company={job.company} logoUrl={job.logo_url} size={32} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {job.position}

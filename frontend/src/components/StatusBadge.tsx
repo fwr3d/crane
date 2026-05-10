@@ -92,7 +92,7 @@ export function StatusPill({ status, onChange }: { status: Status; onChange?: (s
             left: 0,
             zIndex: 50,
             minWidth: 142,
-            background: 'white',
+            background: 'var(--card)',
             border: '1px solid var(--ink-150)',
             borderRadius: 10,
             boxShadow: 'var(--shadow-lg)',

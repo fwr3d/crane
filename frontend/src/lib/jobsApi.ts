@@ -1,6 +1,10 @@
 import { supabase } from './supabase'
 import type { Job, Stats, Status } from '../types'
 
+function raiseSupabase(error: { message: string } | null, fallback: string): asserts error is null {
+  if (error) throw new Error(error.message || fallback)
+}
+
 export const jobsApi = {
   list: async (params?: { search?: string; status?: string; sort?: string }): Promise<Job[]> => {
     let query = supabase.from('jobs').select('*')
@@ -22,36 +26,47 @@ export const jobsApi = {
       default:         query = query.order('date_added', { ascending: false })
     }
 
-    const { data } = await query
+    const { data, error } = await query
+    raiseSupabase(error, 'Could not load jobs.')
     return (data ?? []) as Job[]
   },
 
-  create: async (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string }): Promise<Job> => {
-    const { data } = await supabase.from('jobs').insert(body).select().single()
+  create: async (body: { company: string; position: string; status: Status; url?: string; notes?: string; deadline?: string; tags?: string[] }): Promise<Job> => {
+    const { data, error } = await supabase.from('jobs').insert(body).select().single()
+    raiseSupabase(error, 'Could not create job.')
     return data as Job
   },
 
   update: async (id: string, fields: Partial<Job>): Promise<Job> => {
-    const { data } = await supabase.from('jobs').update(fields).eq('id', id).select().single()
+    const { data, error } = await supabase.from('jobs').update(fields).eq('id', id).select().single()
+    raiseSupabase(error, 'Could not update job.')
     return data as Job
   },
 
   bulkUpdate: async (ids: string[], status: Status): Promise<{ updated: number }> => {
-    const { data } = await supabase.from('jobs').update({ status }).in('id', ids).select()
+    const fields: Record<string, unknown> = { status }
+    if (status === 'Applied') fields.date_applied = new Date().toISOString().slice(0, 10)
+    const { data, error } = await supabase.from('jobs').update(fields).in('id', ids).select()
+    raiseSupabase(error, 'Could not update jobs.')
     return { updated: data?.length ?? 0 }
   },
 
   delete: async (id: string): Promise<void> => {
-    await supabase.from('jobs').delete().eq('id', id)
+    const { error } = await supabase.from('jobs').delete().eq('id', id)
+    raiseSupabase(error, 'Could not delete job.')
   },
 
   clear: async (): Promise<void> => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (user) await supabase.from('jobs').delete().eq('user_id', user.id)
+    if (user) {
+      const { error } = await supabase.from('jobs').delete().eq('user_id', user.id)
+      raiseSupabase(error, 'Could not clear jobs.')
+    }
   },
 
   stats: async (): Promise<Stats> => {
-    const { data } = await supabase.from('jobs').select('status,date_applied,date_added')
+    const { data, error } = await supabase.from('jobs').select('status,date_applied,date_added')
+    raiseSupabase(error, 'Could not load stats.')
     const jobs = (data ?? []) as Pick<Job, 'status' | 'date_applied' | 'date_added'>[]
 
     const by_status = { 'Not Applied': 0, 'Applied': 0, 'Interview': 0, 'Offer': 0, 'Rejected': 0 } as Record<Status, number>
@@ -74,7 +89,8 @@ export const jobsApi = {
   },
 
   exportCsv: async (): Promise<void> => {
-    const { data } = await supabase.from('jobs').select('*').order('date_added', { ascending: false })
+    const { data, error } = await supabase.from('jobs').select('*').order('date_added', { ascending: false })
+    raiseSupabase(error, 'Could not export jobs.')
     if (!data || data.length === 0) return
     const headers = Object.keys(data[0]).join(',')
     const rows = data.map(j => Object.values(j).map(v => `"${v ?? ''}"`).join(','))

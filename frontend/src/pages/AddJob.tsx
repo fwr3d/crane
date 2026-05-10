@@ -5,13 +5,13 @@ import type { Status } from '../types'
 const STATUSES: Status[] = ['Not Applied', 'Applied', 'Interview', 'Offer', 'Rejected']
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px',
+  width: '100%', border: '1px solid var(--ink-150)', borderRadius: '8px',
   padding: '10px 12px', fontSize: '0.875rem', outline: 'none',
-  color: '#0f172a', background: 'white', boxSizing: 'border-box',
+  color: 'var(--ink-800)', background: 'var(--control)', boxSizing: 'border-box',
 }
 
 const labelStyle: React.CSSProperties = {
-  display: 'block', fontSize: '0.68rem', fontWeight: 500, color: '#94a3b8',
+  display: 'block', fontSize: '0.68rem', fontWeight: 500, color: 'var(--ink-400)',
   letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px',
 }
 
@@ -21,6 +21,9 @@ export function AddJob({ onAdded }: { onAdded?: () => void }) {
   const [status,   setStatus]   = useState<Status>('Not Applied')
   const [url,      setUrl]      = useState('')
   const [deadline, setDeadline] = useState('')
+  const [location, setLocation] = useState('')
+  const [salary,   setSalary]   = useState('')
+  const [jobType,  setJobType]  = useState('')
   const [notes,    setNotes]    = useState('')
   const [saved,    setSaved]    = useState(false)
   const [loading,  setLoading]  = useState(false)
@@ -33,30 +36,34 @@ export function AddJob({ onAdded }: { onAdded?: () => void }) {
       company, position, status,
       url:      url      || undefined,
       deadline: deadline || undefined,
+      location: location || undefined,
+      salary:   salary   || undefined,
+      job_type: jobType  || undefined,
+      source:   'manual',
       notes:    notes    || undefined,
     })
     setLoading(false)
     if (onAdded) { onAdded(); return }
     setCompany(''); setPosition(''); setStatus('Not Applied')
-    setUrl(''); setDeadline(''); setNotes('')
+    setUrl(''); setDeadline(''); setLocation(''); setSalary(''); setJobType(''); setNotes('')
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
   return (
     <div className="fadeUp" style={{ maxWidth: '720px' }}>
-      <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', margin: '0 0 1.75rem 0' }}>
+      <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.6rem', fontWeight: 700, color: 'var(--ink-900)', letterSpacing: '-0.02em', margin: '0 0 1.75rem 0' }}>
         Add Job
       </h1>
 
-      <form onSubmit={submit} className="bg-white rounded-2xl p-6 space-y-5" style={{ border: '1px solid #e2e8f0' }}>
+      <form onSubmit={submit} className="bg-white rounded-2xl p-6 space-y-5" style={{ border: '1px solid var(--ink-150)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
             <label style={labelStyle}>Company</label>
             <input style={inputStyle} placeholder="e.g. Stripe" value={company}
               onChange={e => setCompany(e.target.value)}
               onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')}
               required />
           </div>
           <div>
@@ -64,7 +71,7 @@ export function AddJob({ onAdded }: { onAdded?: () => void }) {
             <input style={inputStyle} placeholder="e.g. Software Engineer" value={position}
               onChange={e => setPosition(e.target.value)}
               onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')}
               required />
           </div>
         </div>
@@ -75,14 +82,38 @@ export function AddJob({ onAdded }: { onAdded?: () => void }) {
             <input type="url" style={inputStyle} placeholder="https://..." value={url}
               onChange={e => setUrl(e.target.value)}
               onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
           </div>
           <div>
             <label style={labelStyle}>Deadline</label>
             <input type="date" style={inputStyle} value={deadline}
               onChange={e => setDeadline(e.target.value)}
               onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-              onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={labelStyle}>Location</label>
+            <input style={inputStyle} placeholder="New York, NY" value={location}
+              onChange={e => setLocation(e.target.value)}
+              onFocus={e => (e.target.style.borderColor = '#94a3b8')}
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
+          </div>
+          <div>
+            <label style={labelStyle}>Job type</label>
+            <input style={inputStyle} placeholder="Full-time" value={jobType}
+              onChange={e => setJobType(e.target.value)}
+              onFocus={e => (e.target.style.borderColor = '#94a3b8')}
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
+          </div>
+          <div>
+            <label style={labelStyle}>Salary</label>
+            <input style={inputStyle} placeholder="$90k - $120k" value={salary}
+              onChange={e => setSalary(e.target.value)}
+              onFocus={e => (e.target.style.borderColor = '#94a3b8')}
+              onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
           </div>
         </div>
 
@@ -93,9 +124,9 @@ export function AddJob({ onAdded }: { onAdded?: () => void }) {
               <button key={s} type="button" onClick={() => setStatus(s)} style={{
                 fontSize: '0.75rem', fontWeight: 500, padding: '5px 14px', borderRadius: 999,
                 cursor: 'pointer', transition: 'all 0.15s',
-                border: status === s ? '1px solid #0f172a' : '1px solid #e2e8f0',
-                background: status === s ? '#0f172a' : 'white',
-                color: status === s ? 'white' : '#94a3b8',
+                border: status === s ? '1px solid var(--accent-line)' : '1px solid var(--ink-150)',
+                background: status === s ? 'var(--accent-bg)' : 'var(--control)',
+                color: status === s ? 'var(--accent)' : 'var(--ink-400)',
               }}>
                 {s}
               </button>
@@ -109,11 +140,11 @@ export function AddJob({ onAdded }: { onAdded?: () => void }) {
             placeholder="Paste the job description, contacts, salary info..."
             value={notes} onChange={e => setNotes(e.target.value)}
             onFocus={e => (e.target.style.borderColor = '#94a3b8')}
-            onBlur={e => (e.target.style.borderColor = '#e2e8f0')} />
+            onBlur={e => (e.target.style.borderColor = 'var(--ink-150)')} />
         </div>
 
         <button type="submit" disabled={loading} className="w-full rounded-lg transition-colors" style={{
-          padding: '10px', background: loading ? '#64748b' : '#0f172a', color: 'white',
+          padding: '10px', background: loading ? 'var(--action-muted)' : 'var(--action)', color: 'var(--action-text)',
           fontSize: '0.85rem', fontWeight: 500, border: 'none',
           cursor: loading ? 'not-allowed' : 'pointer', marginTop: '4px',
         }}>
