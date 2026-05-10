@@ -13,12 +13,13 @@ import { useTheme } from './hooks/useTheme'
 import { useTutorial } from './hooks/useTutorial'
 import { Account } from './pages/Account'
 import { Dashboard } from './pages/Dashboard'
+import { Help } from './pages/Help'
 import { Jobs } from './pages/Jobs'
 import { Scrape } from './pages/Scrape'
 import { Stats } from './pages/Stats'
 import type { Stats as StatsSummary } from './types'
 
-type Page = 'dashboard' | 'jobs' | 'scrape' | 'stats' | 'account'
+type Page = 'dashboard' | 'jobs' | 'scrape' | 'stats' | 'account' | 'help'
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'dashboard', label: 'Today' },
@@ -26,6 +27,14 @@ const NAV: { id: Page; label: string }[] = [
   { id: 'scrape', label: 'Find' },
   { id: 'stats', label: 'Stats' },
   { id: 'account', label: 'Settings' },
+]
+
+const MOBILE_NAV: { id: Page; label: string }[] = [
+  { id: 'dashboard', label: 'Today' },
+  { id: 'jobs', label: 'Board' },
+  { id: 'scrape', label: 'Find' },
+  { id: 'stats', label: 'Stats' },
+  { id: 'help', label: 'Help' },
 ]
 
 function NavIcon({ page }: { page: Page }) {
@@ -83,6 +92,16 @@ function NavIcon({ page }: { page: Page }) {
     )
   }
 
+  if (page === 'help') {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <line x1="12" y1="17" x2="12.01" y2="17" strokeWidth={3} strokeLinecap="round" />
+      </svg>
+    )
+  }
+
   return (
     <svg {...common}>
       <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
@@ -119,14 +138,15 @@ export default function App() {
 
   if (isMobile) {
     return (
-      <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', color: 'var(--ink-800)', minHeight: '100dvh' }}>
+      <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', color: 'var(--ink-800)', minHeight: '100dvh', width: '100%' }}>
         {/* Page content */}
-        <main style={{ padding: '20px 16px 90px', minHeight: '100dvh', boxSizing: 'border-box' }}>
+        <main style={{ padding: '20px 16px 90px', minHeight: '100dvh', boxSizing: 'border-box', width: '100%' }}>
           {page === 'dashboard' && <Dashboard goJobs={() => setPage('jobs')} />}
           {page === 'jobs' && <Jobs goScrape={goFind} onStatusChange={() => tutorial.markDone('change_status')} onDeadlineSet={() => tutorial.markDone('set_deadline')} />}
           {page === 'scrape' && <Scrape />}
           {page === 'stats' && <Stats />}
           {page === 'account' && <Account dark={dark} toggleDark={toggleDark} onJobsCleared={() => setStats(null)} />}
+          {page === 'help' && <Help />}
         </main>
 
         {/* Bottom nav */}
@@ -137,27 +157,23 @@ export default function App() {
           paddingBottom: 'env(safe-area-inset-bottom)',
           borderTop: '1px solid rgba(255,255,255,0.07)',
         }}>
-          {NAV.map(n => (
+          {MOBILE_NAV.map(n => (
             <button
               key={n.id}
               onClick={() => n.id === 'scrape' ? goFind() : navigate(n.id)}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: 4, padding: '10px 4px', border: 'none', background: 'transparent', cursor: 'pointer',
-                color: page === n.id ? '#36d458' : '#64748b',
+                gap: 3, padding: '10px 2px', border: 'none', background: 'transparent', cursor: 'pointer',
+                color: page === n.id ? '#36d458' : '#64748b', minWidth: 0,
               }}
             >
               <span style={{ display: 'inline-flex', opacity: page === n.id ? 1 : 0.7 }}>
                 <NavIcon page={n.id} />
               </span>
-              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.03em' }}>{n.label}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>{n.label}</span>
             </button>
           ))}
         </nav>
-
-        {!tutorial.dismissed && !tutorial.allDone && (
-          <TutorialChecklist steps={tutorial.steps} onSpotlight={tutorial.setSpotlight} onDismiss={tutorial.dismiss} />
-        )}
         <Analytics />
         <SpeedInsights />
       </div>
@@ -301,6 +317,7 @@ export default function App() {
         {page === 'scrape' && <Scrape />}
         {page === 'stats' && <Stats />}
         {page === 'account' && <Account dark={dark} toggleDark={toggleDark} onJobsCleared={() => setStats(null)} />}
+        {page === 'help' && <Help />}
       </main>
 
       {activeStep && (

@@ -173,7 +173,7 @@ export function Dashboard({ goJobs }: { goJobs: () => void }) {
 
   if (loading) {
     return (
-      <div className="fadeUp" style={{ maxWidth: 1080 }}>
+      <div className="fadeUp" style={{ maxWidth: 1080, width: '100%' }}>
         <div className="animate-pulse" style={{ display: 'grid', gap: 24 }}>
           <div style={{ height: 78, maxWidth: 360, background: 'var(--ink-100)', borderRadius: 12 }} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
