@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirm your Crane account</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+</head>
+<body style="margin:0;padding:0;background:#eef2f7;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7;padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="background:#0c111d;border-radius:16px 16px 0 0;padding:36px 40px 32px;">
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding-right:14px;vertical-align:middle;">
+                    <img src="https://usecrane.vercel.app/crane.svg" width="32" height="31" alt="Crane" style="display:block;" />
+                  </td>
+                  <td style="vertical-align:middle;">
+                    <span style="font-family:'Syne',Georgia,serif;font-size:24px;font-weight:800;letter-spacing:0.22em;color:#ffffff;text-transform:uppercase;">CRANE</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Green accent bar -->
+          <tr>
+            <td style="background:#36d458;height:4px;font-size:0;line-height:0;">&nbsp;</td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="background:#ffffff;padding:40px 40px 36px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
+              <p style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0c111d;line-height:1.3;">Confirm your email</p>
+              <p style="margin:0 0 30px;font-size:15px;color:#475569;line-height:1.65;">
+                Thanks for signing up for Crane. Click the button below to verify your email address and start organizing your job search.
+              </p>
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="border-radius:8px;background:#36d458;">
+                    <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 30px;font-size:14px;font-weight:700;color:#0c111d;text-decoration:none;letter-spacing:0.01em;">
+                      Confirm email address →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:28px 0 0;font-size:13px;color:#94a3b8;line-height:1.6;">
+                If you didn't create a Crane account, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#0c111d;border-radius:0 0 16px 16px;padding:20px 40px;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#475569;letter-spacing:0.04em;">
+                CRANE &mdash; Job search, organized.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
