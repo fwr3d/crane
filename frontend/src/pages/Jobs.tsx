@@ -6,11 +6,6 @@ import { STATUS_LIST, statusTokens } from '../components/statusTokens'
 import { StatusDot } from '../components/StatusBadge'
 import { linkedinJobsUrl } from '../utils/companyDomain'
 
-function suggestDeadline(dateAdded: string | undefined): string {
-  const base = dateAdded ? new Date(dateAdded) : new Date()
-  base.setDate(base.getDate() + 14)
-  return base.toISOString().slice(0, 10)
-}
 
 function inferJobType(position: string): string {
   const p = position.toLowerCase()
@@ -164,7 +159,7 @@ export function Jobs({ goScrape, onStatusChange, onDeadlineSet }: { goScrape: ()
       logo_url: job.logo_url ?? '',
       tags: job.tags ?? [],
       notes: job.notes ?? '',
-      deadline: job.deadline || suggestDeadline(job.date_added),
+      deadline: job.deadline ?? '',
     })
   }
 
