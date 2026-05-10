@@ -117,6 +117,53 @@ export default function App() {
     if (isMobile) setSidebarOpen(false)
   }
 
+  if (isMobile) {
+    return (
+      <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', color: 'var(--ink-800)', minHeight: '100dvh', overflowX: 'hidden' }}>
+        {/* Page content */}
+        <main style={{ padding: '20px 16px 90px', minHeight: '100dvh', boxSizing: 'border-box' }}>
+          {page === 'dashboard' && <Dashboard goJobs={() => setPage('jobs')} />}
+          {page === 'jobs' && <Jobs goScrape={goFind} onStatusChange={() => tutorial.markDone('change_status')} onDeadlineSet={() => tutorial.markDone('set_deadline')} />}
+          {page === 'scrape' && <Scrape />}
+          {page === 'stats' && <Stats />}
+          {page === 'account' && <Account dark={dark} toggleDark={toggleDark} onJobsCleared={() => setStats(null)} />}
+        </main>
+
+        {/* Bottom nav */}
+        <nav style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+          background: dark ? '#0b1018' : '#0c111d',
+          display: 'flex', alignItems: 'stretch',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+        }}>
+          {NAV.map(n => (
+            <button
+              key={n.id}
+              onClick={() => n.id === 'scrape' ? goFind() : navigate(n.id)}
+              style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 4, padding: '10px 4px', border: 'none', background: 'transparent', cursor: 'pointer',
+                color: page === n.id ? '#36d458' : '#64748b',
+              }}
+            >
+              <span style={{ display: 'inline-flex', opacity: page === n.id ? 1 : 0.7 }}>
+                <NavIcon page={n.id} />
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.03em' }}>{n.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {!tutorial.dismissed && !tutorial.allDone && (
+          <TutorialChecklist steps={tutorial.steps} onSpotlight={tutorial.setSpotlight} onDismiss={tutorial.dismiss} />
+        )}
+        <Analytics />
+        <SpeedInsights />
+      </div>
+    )
+  }
+
   return (
     <div style={{ fontFamily: "'Figtree', system-ui, sans-serif", background: 'var(--paper)', color: 'var(--ink-800)', display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {isMobile && sidebarOpen && (
@@ -248,20 +295,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main style={{ flex: 1, minWidth: 0, height: '100vh', overflowY: 'auto', padding: isMobile ? '16px 16px 60px' : '36px 48px 60px' }}>
-        {isMobile && (
-          <button
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-600)', padding: '4px 0 16px', display: 'flex', alignItems: 'center', gap: 8 }}
-          >
-            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
-        )}
+      <main style={{ flex: 1, minWidth: 0, height: '100vh', overflowY: 'auto', padding: '36px 48px 60px' }}>
         {page === 'dashboard' && <Dashboard goJobs={() => setPage('jobs')} />}
         {page === 'jobs' && <Jobs goScrape={goFind} onStatusChange={() => tutorial.markDone('change_status')} onDeadlineSet={() => tutorial.markDone('set_deadline')} />}
         {page === 'scrape' && <Scrape />}

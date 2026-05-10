@@ -5,6 +5,7 @@ import { CompanyLogo } from '../components/CompanyLogo'
 import { STATUS_LIST, statusTokens } from '../components/statusTokens'
 import { StatusDot } from '../components/StatusBadge'
 import { linkedinJobsUrl } from '../utils/companyDomain'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 
 function inferJobType(position: string): string {
@@ -242,9 +243,10 @@ export function Jobs({ goScrape, onStatusChange, onDeadlineSet }: { goScrape: ()
   }
 
   const isEmpty = !loading && jobs.length === 0
+  const isMobile = useIsMobile()
 
   return (
-    <div className="fadeUp" style={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
+    <div className="fadeUp" style={isMobile ? { display: 'flex', flexDirection: 'column' } : { height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
       <header style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -342,7 +344,11 @@ export function Jobs({ goScrape, onStatusChange, onDeadlineSet }: { goScrape: ()
         </div>
       ) : !loading && (
         /* Kanban columns */
-        <div style={{
+        <div style={isMobile ? {
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+        } : {
           display: 'grid',
           gridTemplateColumns: 'repeat(5, minmax(180px, 1fr))',
           gap: 10,
@@ -444,7 +450,7 @@ export function Jobs({ goScrape, onStatusChange, onDeadlineSet }: { goScrape: ()
 
                 {/* Cards */}
                 <div style={{
-                  flex: 1, overflowY: 'auto', padding: '0 8px 8px',
+                  flex: 1, overflowY: isMobile ? 'visible' : 'auto', padding: '0 8px 8px',
                   display: 'flex', flexDirection: 'column', gap: 5,
                 }}>
                   {columnJobs.map(job => {
