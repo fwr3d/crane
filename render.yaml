@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: crane-api
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      # sync: false keeps these out of the repo — Render prompts for each value
+      # in the dashboard on first deploy. DATABASE_URL should be the Supabase
+      # "Session pooler" URI (IPv4); the direct-connection host is IPv6-only and
+      # will not resolve from Render.
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

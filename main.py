@@ -196,6 +196,17 @@ class BulkUpdate(BaseModel):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@app.get("/api/health")
+def health():
+    """Unauthenticated liveness probe.
+
+    The host's health check needs a route that returns 200 without a token, and
+    every other endpoint requires auth. Also useful for confirming a deploy is
+    actually serving rather than sitting behind an edge fallback.
+    """
+    return {"status": "ok"}
+
+
 @app.get("/api/auth/validate")
 def validate_session(current_user: dict = Depends(require_auth)):
     return {"id": current_user.get("id")}
