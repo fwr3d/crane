@@ -60,7 +60,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch(AUTH_VALIDATE_URL, {
         headers: { Authorization: `Bearer ${nextSession.access_token}` },
       }).catch(() => null)
-      if (!response?.ok) {
+      // Only a definitive rejection invalidates the session. The Supabase
+      // getUser() call above is the real authority on whether the token is
+      // good; an unreachable, misconfigured, or erroring backend (network
+      // failure, 404, 5xx) must not sign the user out, or every render bounces
+      // them back to /onboarding and sign-in looks like an endless loop.
+      if (response && (response.status === 401 || response.status === 403)) {
         await clearLocalAuth()
         return
       }
